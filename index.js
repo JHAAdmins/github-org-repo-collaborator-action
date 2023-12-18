@@ -376,7 +376,8 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const member = memberArray.find((member) => member.login === login)
       const memberValue = member ? member.role : 'OUTSIDE COLLABORATOR'
 
-      if (orgRepo !== 'Total Contributions') {
+      if (orgRepo !== 'Total Contributions' &&
+          ssoEmailValue !== 'account created') {
         const ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, verifiedEmail, permissions, org, memberValue }
       //const ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, verifiedEmail, permission, org, memberValue }
 
