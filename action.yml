@@ -14,9 +14,6 @@ inputs:
   permission:
     description: 'The repo collaborator permission to query for'
     required: false
-  days:
-    description: 'Number of days to look back for contributions'
-    required: false
   json:
     description: 'Additionally export report in JSON format'
     required: false
