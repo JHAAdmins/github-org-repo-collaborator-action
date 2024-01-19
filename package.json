@@ -15,7 +15,7 @@
     }
   ],
   "main": "index.js",
-  "repository": "github:nicklegan/github-org-repo-collaborator-action",
+  "repository": "github:JHAAdmins/github-org-repo-collaborator-action",
   "engines": {
     "node": ">=16",
     "npm": ">=7"
