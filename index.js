@@ -133,7 +133,7 @@ async function repoNames(collabsArray) {
           endCursor = null;
         }
         await collabRole(repo, collabsArray)
-        console.log(repo.name)
+        console.log(`${dataJSON.repository.name} (Rate limit: ${dataJSON.rateLimit.remaining})`)
       }
     } while (hasNextPage);
   } catch (error) {
