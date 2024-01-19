@@ -102,6 +102,12 @@ async function repoNames(collabsArray) {
               endCursor
             }
           }
+      rateLimit {
+        limit
+        cost
+        remaining
+        resetAt
+        }
         }
       }
     `;
@@ -161,6 +167,12 @@ async function collabRole(repo, collabsArray) {
                 endCursor
               }
             }
+             }
+      rateLimit {
+        limit
+        cost
+        remaining
+        resetAt
           }
         }
       }
@@ -266,6 +278,12 @@ async function ssoEmail(emailArray) {
                 endCursor
               }
             }
+             }
+      rateLimit {
+        limit
+        cost
+        remaining
+        resetAt
           }
         }
       }
@@ -326,6 +344,12 @@ async function membersWithRole(memberArray) {
               endCursor
             }
           }
+           }
+      rateLimit {
+        limit
+        cost
+        remaining
+        resetAt
         }
       }
     `
