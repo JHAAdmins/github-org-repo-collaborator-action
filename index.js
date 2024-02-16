@@ -8,27 +8,52 @@ const org = core.getInput('org', { required: false }) || eventPayload.organizati
 const { owner, repo } = github.context.repo
 const { GitHub } = require('@actions/github/lib/utils')
 const { createAppAuth } = require('@octokit/auth-app')
+const { throttling } = require('@octokit/plugin-throttling');
+const { Octokit } = require('@octokit/rest');
+const { throttling } = require('@octokit/plugin-throttling');
+const MyOctokit = Octokit.plugin(throttling);
 
-const appId = core.getInput('appid', { required: false })
-const privateKey = core.getInput('privatekey', { required: false })
-const installationId = core.getInput('installationid', { required: false })
+const octokit = new MyOctokit({
+  auth: token,
+  throttle: {
+    onRateLimit: (retryAfter, options) => {
+      octokit.log.warn(`Request quota exhausted for request ${options.method} ${options.url}`);
+      // Retry after 15 minutes
+      await new Promise(resolve => setTimeout(resolve, 15 * 60 * 1000));
 
-const rolePermission = core.getInput('permission', { required: false }) || 'ADMIN'
-const committerName = core.getInput('committer-name', { required: false }) || 'github-actions'
-const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com'
-const jsonExport = core.getInput('json', { required: false }) || 'FALSE'
-const affil = core.getInput('affil', { required: false }) || 'ALL'
-const days = core.getInput('days', { required: false }) || '90'
+      if (options.request.retryCount === 0) {
+        // Retry after 5 seconds
+        return true;
+      }
+    },
+    onAbuseLimit: (retryAfter, options) => {
+      octokit.log.warn(`Abuse detected for request ${options.method} ${options.url}`);
+      // Retry after 15 minutes
+      await new Promise(resolve => setTimeout(resolve, 15 * 60 * 1000));
+    },
+      octokit.log.warn(`Abuse detected for request ${options.method} ${options.url}`)
+  },
+// Remove the closing parentheses and semicolon
+// on lines 2 and 4
+// to fix the "Argument expression expected" and "Declaration or statement expected" problems.
+            octokit = new Octokit({
+              authStrategy: createAppAuth,
+              auth: {
+                appId: appId,
+                privateKey: privateKey,
+                installationId: installationId
+              },
+              plugins: [
+                throttling
+              ]
+            }),
 
-const to = new Date()
-const from = new Date()
-from.setDate(to.getDate() - days)
+          id = [],
 
-let octokit = null
-let id = []
-
-// GitHub App authentication
-if (appId && privateKey && installationId) {
+          // GitHub App authentication
+          if (appId && privateKey && installationId) {
+            // Code inside the if statement
+          },
   octokit = new GitHub({
     authStrategy: createAppAuth,
     auth: {
@@ -36,10 +61,8 @@ if (appId && privateKey && installationId) {
       privateKey: privateKey,
       installationId: installationId
     }
-  })
-} else {
-  octokit = github.getOctokit(token)
-}
+  });
+octokit = github.getOctokit(token);
 
 // Orchestrator
 ;(async () => {
@@ -386,7 +409,7 @@ async function membersWithRole(memberArray) {
 async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
   try {
     collabsArray.forEach((collab) => {
-      const login = collab      const login = collab.login
+      const login = collab.login
       const name = collab.name
       const verifiedEmail = collab.verifiedEmail
       const permission = collab.permission
@@ -403,10 +426,9 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       if (orgRepo !== 'Total Contributions' &&
           ssoEmailValue !== 'account created') {
         const ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, verifiedEmail, permissions, org, memberValue }
-      //const ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, verifiedEmail, permission, org, memberValue }
-
-      mergeArray.push(ssoCollab)
-    })
+        mergeArray.push(ssoCollab)
+      }
+    });
   } catch (error) {
     core.setFailed(error.message)
   }
