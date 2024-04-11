@@ -29,11 +29,11 @@ const { throttling } = require("@octokit/plugin-throttling");
 
 const ThrottledOctokit = Octokit.plugin(throttling);
 
-const octokit = new ThrottledOctokit({
-  auth: "your-auth-token",
+let octokitInstance = new ThrottledOctokit({
+  auth: "GITHUBREPOPERMS",
   throttle: {
     onRateLimit: async (retryAfter, options) => {
-      octokit.log.warn(
+      octokitInstance.log.warn(
         `Request quota exhausted for request ${options.method} ${options.url}`
       );
 
@@ -45,12 +45,20 @@ const octokit = new ThrottledOctokit({
       }
     },
     onAbuseLimit: (retryAfter, options) => {
-      // does not retry, only logs a warning
-      octokit.log.warn(
+      octokitInstance.log.warn(
         `Abuse detected for request ${options.method} ${options.url}`
       );
-    },
-  },
+
+      // Convert 10 minutes to milliseconds
+      const waitTime = 10 * 60 * 1000;
+
+      setTimeout(() => {
+        // Code to retry the request or resume execution goes here
+      }, waitTime);
+
+      return true; // Indicates that the request should be retried
+    }
+  }
 });
 let octokit = null
 let id = []
