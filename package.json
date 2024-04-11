@@ -30,7 +30,7 @@
     "@octokit/auth-app": "^3.6.1",
     "@octokit/plugin-throttling": "^9.1.0",
     "array-sort": "^1.0.0",
-    "csv": "^6.1.0"
+    "csv": "^6.3.8"
   }
 }
 
