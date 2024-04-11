@@ -1,5 +1,5 @@
-{
-  "name": "github-org-repo-collaborator-action",
+{ 
+"name": "github-org-repo-collaborator-action",
   "version": "2.0.0",
   "description": "A GitHub Action to generate a report which contains repository collaborator details for a GitHub organization.",
   "author": {
@@ -33,3 +33,4 @@
     "csv": "^6.1.0"
   }
 }
+
