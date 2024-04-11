@@ -8,52 +8,55 @@ const org = core.getInput('org', { required: false }) || eventPayload.organizati
 const { owner, repo } = github.context.repo
 const { GitHub } = require('@actions/github/lib/utils')
 const { createAppAuth } = require('@octokit/auth-app')
-const { throttling } = require('@octokit/plugin-throttling');
-const { Octokit } = require('@octokit/rest');
-const { throttling } = require('@octokit/plugin-throttling');
-const MyOctokit = Octokit.plugin(throttling);
 
-const octokit = new MyOctokit({
-  auth: token,
+const appId = core.getInput('appid', { required: false })
+const privateKey = core.getInput('privatekey', { required: false })
+const installationId = core.getInput('installationid', { required: false })
+
+const rolePermission = core.getInput('permission', { required: false }) || 'ADMIN'
+const committerName = core.getInput('committer-name', { required: false }) || 'github-actions'
+const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com'
+const jsonExport = core.getInput('json', { required: false }) || 'FALSE'
+const affil = core.getInput('affil', { required: false }) || 'ALL'
+const days = core.getInput('days', { required: false }) || '90'
+
+const to = new Date()
+const from = new Date()
+from.setDate(to.getDate() - days)
+
+const { Octokit } = require("@octokit/core");
+const { throttling } = require("@octokit/plugin-throttling");
+
+const ThrottledOctokit = Octokit.plugin(throttling);
+
+const octokit = new ThrottledOctokit({
+  auth: "your-auth-token",
   throttle: {
-    onRateLimit: (retryAfter, options) => {
-      octokit.log.warn(`Request quota exhausted for request ${options.method} ${options.url}`);
-      // Retry after 15 minutes
-      await new Promise(resolve => setTimeout(resolve, 15 * 60 * 1000));
+    onRateLimit: async (retryAfter, options) => {
+      octokit.log.warn(
+        `Request quota exhausted for request ${options.method} ${options.url}`
+      );
 
-      if (options.request.retryCount === 0) {
-        // Retry after 5 seconds
+      // Check if the remaining requests are less than 1000
+      if (options.rate.limit - options.rate.used < 1000) {
+        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
+        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
         return true;
       }
     },
     onAbuseLimit: (retryAfter, options) => {
-      octokit.log.warn(`Abuse detected for request ${options.method} ${options.url}`);
-      // Retry after 15 minutes
-      await new Promise(resolve => setTimeout(resolve, 15 * 60 * 1000));
+      // does not retry, only logs a warning
+      octokit.log.warn(
+        `Abuse detected for request ${options.method} ${options.url}`
+      );
     },
-      octokit.log.warn(`Abuse detected for request ${options.method} ${options.url}`)
   },
-// Remove the closing parentheses and semicolon
-// on lines 2 and 4
-// to fix the "Argument expression expected" and "Declaration or statement expected" problems.
-            octokit = new Octokit({
-              authStrategy: createAppAuth,
-              auth: {
-                appId: appId,
-                privateKey: privateKey,
-                installationId: installationId
-              },
-              plugins: [
-                throttling
-              ]
-            }),
+});
+let octokit = null
+let id = []
 
-          id = [],
-
-          // GitHub App authentication
-          if (appId && privateKey && installationId) {
-            // Code inside the if statement
-          },
+// GitHub App authentication
+if (appId && privateKey && installationId) {
   octokit = new GitHub({
     authStrategy: createAppAuth,
     auth: {
@@ -61,8 +64,10 @@ const octokit = new MyOctokit({
       privateKey: privateKey,
       installationId: installationId
     }
-  });
-octokit = github.getOctokit(token);
+  })
+} else {
+  octokit = github.getOctokit(token)
+}
 
 // Orchestrator
 ;(async () => {
@@ -109,9 +114,7 @@ async function orgID() {
 // Query all organization repository names
 async function repoNames(collabsArray) {
   try {
-    // Add a cursor variable to keep track of pagination
-    let endCursor = null;
-
+    let endCursor = null
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
@@ -125,51 +128,43 @@ async function repoNames(collabsArray) {
               endCursor
             }
           }
-      rateLimit {
-        limit
-        cost
-        remaining
-        resetAt
-        }
         }
       }
-    `;
+    `
 
-    let hasNextPage = false;
-    let dataJSON = null;
+    let hasNextPage = false
+    let dataJSON = null
 
     do {
       dataJSON = await octokit.graphql({
         query,
         owner: org,
         cursorID: endCursor
-      });
+      })
 
-      const repos = dataJSON.organization.repositories.nodes.map((repo) => repo);
+      const repos = dataJSON.organization.repositories.nodes.map((repo) => repo)
 
-      hasNextPage = dataJSON.organization.repositories.pageInfo.hasNextPage;
+      hasNextPage = dataJSON.organization.repositories.pageInfo.hasNextPage
 
       for (const repo of repos) {
         if (hasNextPage) {
-          endCursor = dataJSON.organization.repositories.pageInfo.endCursor;
+          endCursor = dataJSON.organization.repositories.pageInfo.endCursor
         } else {
-          endCursor = null;
+          endCursor = null
         }
         await collabRole(repo, collabsArray)
-        console.log(`${dataJSON.repository.name} (Rate limit: ${dataJSON.rateLimit.remaining})`)
+        console.log(repo.name)
       }
-    } while (hasNextPage);
+    } while (hasNextPage)
   } catch (error) {
-    core.setFailed(error.message);
+    core.setFailed(error.message)
   }
 }
 
 // Query all repository collaborators
 async function collabRole(repo, collabsArray) {
   try {
-    // Add a cursor variable to keep track of pagination
-    let endCursor = null;
-
+    let endCursor = null
     const query = /* GraphQL */ `
       query ($owner: String!, $id: ID!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
         organization(login: $owner) {
@@ -181,6 +176,19 @@ async function collabRole(repo, collabsArray) {
                   name
                   email
                   organizationVerifiedDomainEmails(login: $owner)
+                  createdAt
+                  updatedAt
+                  updatedAt
+                  contributionsCollection(organizationID: $id, from: $from, to: $to) {
+                    hasAnyContributions
+                    totalCommitContributions
+                    totalIssueContributions
+                    totalPullRequestContributions
+                    totalPullRequestReviewContributions
+                    totalRepositoriesWithContributedIssues
+                    totalRepositoriesWithContributedCommits
+                    totalRepositoriesWithContributedPullRequests
+                    totalRepositoriesWithContributedPullRequestReviews
                   }
                 }
                 permission
@@ -190,19 +198,13 @@ async function collabRole(repo, collabsArray) {
                 endCursor
               }
             }
-             }
-      rateLimit {
-        limit
-        cost
-        remaining
-        resetAt
           }
         }
       }
-    `;
+    `
 
-    let hasNextPage = false;
-    let dataJSON = null;
+    let hasNextPage = false
+    let dataJSON = null
 
     do {
       dataJSON = await octokit.graphql({
@@ -214,36 +216,49 @@ async function collabRole(repo, collabsArray) {
         from: from,
         to: to,
         cursorID: endCursor
-      });
+      })
 
-      const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role);
+      const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role)
 
-      hasNextPage = dataJSON.organization.repository.collaborators.pageInfo.hasNextPage;
+      hasNextPage = dataJSON.organization.repository.collaborators.pageInfo.hasNextPage
 
       for (const role of roles) {
         if (hasNextPage) {
-          endCursor = dataJSON.organization.repository.collaborators.pageInfo.endCursor;
+          endCursor = dataJSON.organization.repository.collaborators.pageInfo.endCursor
         } else {
-          endCursor = null;
+          endCursor = null
         }
 
         const login = role.node.login
         const name = role.node.name || ''
+        const publicEmail = role.node.email || ''
         const verifiedEmail = role.node.organizationVerifiedDomainEmails ? role.node.organizationVerifiedDomainEmails.join(', ') : ''
+        const createdAt = role.node.createdAt.slice(0, 10) || ''
+        const updatedAt = role.node.updatedAt.slice(0, 10) || ''
         const permission = role.permission
         const orgRepo = repo.name
         const visibility = repo.visibility
-        
+
+        const activeContrib = role.node.contributionsCollection.hasAnyContributions
+        const commitContrib = role.node.contributionsCollection.totalCommitContributions
+        const issueContrib = role.node.contributionsCollection.totalIssueContributions
+        const prContrib = role.node.contributionsCollection.totalPullRequestContributions
+        const prreviewContrib = role.node.contributionsCollection.totalPullRequestReviewContributions
+        const repoIssueContrib = role.node.contributionsCollection.totalRepositoriesWithContributedIssues
+        const repoCommitContrib = role.node.contributionsCollection.totalRepositoriesWithContributedCommits
+        const repoPullRequestContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequests
+        const repoPullRequestReviewContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequestReviews
+
+        const sumContrib = commitContrib + issueContrib + prContrib + prreviewContrib + repoIssueContrib + repoCommitContrib + repoPullRequestContrib + repoPullRequestReviewContrib || ''
+
         if (role.permission === rolePermission) {
-          collabsArray.push({ orgRepo, login, name, verifiedEmail, permission, visibility, org })
+          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt, activeContrib, sumContrib })
         } else if (rolePermission === 'ALL') {
-          collabsArray.push({ orgRepo, login, name, verifiedEmail, permission, visibility, org })
+          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt, activeContrib, sumContrib })
         }
       }
-    } while (hasNextPage);
-  } catch (error) {
-    core.setFailed(error.message);
-  }
+    } while (hasNextPage)
+  } catch (error) {}
 }
 
 // Check if the organization has SSO enabled
@@ -277,8 +292,7 @@ async function ssoCheck(emailArray) {
 // Retrieve all members of a SSO enabled organization
 async function ssoEmail(emailArray) {
   try {
-    // Add a cursor variable to keep track of pagination
-    let paginationMember = null;
+    let paginationMember = null
 
     const query = /* GraphQL */ `
       query ($org: String!, $cursorID: String) {
@@ -301,12 +315,6 @@ async function ssoEmail(emailArray) {
                 endCursor
               }
             }
-             }
-      rateLimit {
-        limit
-        cost
-        remaining
-        resetAt
           }
         }
       }
@@ -348,9 +356,7 @@ async function ssoEmail(emailArray) {
 // Query all organization members
 async function membersWithRole(memberArray) {
   try {
-    // Add a cursor variable to keep track of pagination
-    let endCursor = null;
-
+    let endCursor = null
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
@@ -367,12 +373,6 @@ async function membersWithRole(memberArray) {
               endCursor
             }
           }
-           }
-      rateLimit {
-        limit
-        cost
-        remaining
-        resetAt
         }
       }
     `
@@ -411,11 +411,16 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
     collabsArray.forEach((collab) => {
       const login = collab.login
       const name = collab.name
+      const publicEmail = collab.publicEmail
       const verifiedEmail = collab.verifiedEmail
       const permission = collab.permission
       const visibility = collab.visibility
       const org = collab.org
       const orgRepo = collab.orgRepo
+      const createdAt = collab.createdAt
+      const updatedAt = collab.updatedAt
+      const activeContrib = collab.activeContrib
+      const sumContrib = collab.sumContrib
 
       const ssoEmail = emailArray.find((email) => email.login === login)
       const ssoEmailValue = ssoEmail ? ssoEmail.ssoEmail : ''
@@ -423,12 +428,10 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const member = memberArray.find((member) => member.login === login)
       const memberValue = member ? member.role : 'OUTSIDE COLLABORATOR'
 
-      if (orgRepo !== 'Total Contributions' &&
-          ssoEmailValue !== 'account created') {
-        const ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, verifiedEmail, permissions, org, memberValue }
-        mergeArray.push(ssoCollab)
-      }
-    });
+      ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, publicEmail, verifiedEmail, permission, org, createdAt, updatedAt, activeContrib, sumContrib, memberValue }
+
+      mergeArray.push(ssoCollab)
+    })
   } catch (error) {
     core.setFailed(error.message)
   }
@@ -444,8 +447,13 @@ async function report(mergeArray) {
       name: 'Full name',
       ssoEmailValue: 'SSO email',
       verifiedEmail: 'Verified email',
+      publicEmail: 'Public email',
       permission: 'Repo permission',
       memberValue: 'Organization role',
+      activeContrib: 'Active contributions',
+      sumContrib: 'Total contributions',
+      createdAt: 'User created',
+      updatedAt: 'User updated',
       org: 'Organization'
     }
 
@@ -527,4 +535,3 @@ async function json(mergeArray) {
     core.setFailed(error.message)
   }
 }
-
