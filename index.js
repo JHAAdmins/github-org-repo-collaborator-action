@@ -285,22 +285,28 @@ async function ssoCheck(emailArray) {
           samlIdentityProvider {
             id
           }
+          enterprise {
+            samlIdentityProvider {
+              id
+            }
+          }
         }
       }
     `
 
-    dataJSON = await octokit.graphql({
+    const dataJSON = await octokit.graphql({
       query,
       org: org
     })
 
-    if (dataJSON.organization.samlIdentityProvider) {
+    if (dataJSON.organization.samlIdentityProvider || dataJSON.organization.enterprise.samlIdentityProvider) {
       await ssoEmail(emailArray)
     } else {
-      // do nothing
+      // Handle the case where neither SAML identity provider is available
+      console.error("No SAML identity provider is enabled for the organization.")
     }
   } catch (error) {
-    core.setFailed(error.message)
+    console.error("Request failed due to the following response errors:", error)
   }
 }
 const { Octokit } = require("@octokit/core");
