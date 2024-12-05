@@ -294,61 +294,42 @@ async function ssoCheck(emailArray) {
       }
     `
 
-    const dataJSON = await octokit.graphql({
-      query,
-      org: org
-    })
-
-    if (dataJSON.organization.samlIdentityProvider || dataJSON.organization.enterprise.samlIdentityProvider) {
-      await ssoEmail(emailArray)
-    } else {
-      // Handle the case where neither SAML identity provider is available
-      console.error("No SAML identity provider is enabled for the organization.")
-    }
-  } catch (error) {
-    console.error("Request failed due to the following response errors:", error)
-  }
-}
 const { Octokit } = require("@octokit/core");
 const { throttling } = require("@octokit/plugin-throttling");
 
-const ThrottledOctokitPluginInstance = Octokit.plugin(throttling);
+try {
+  const dataJSON = await octokit.graphql({
+    query,
+    org: org
+  });
 
-octokitInstance = new ThrottledOctokit({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
+  const orgSamlProvider = dataJSON.organization.samlIdentityProvider;
+  const enterpriseSamlProvider = dataJSON.organization.enterprise.samlIdentityProvider;
 
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
-      }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
-
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
-
-      return true; // Indicates that the request should be retried
-    }
+  if (orgSamlProvider || enterpriseSamlProvider) {
+    await ssoEmail(emailArray);
+  } else {
+    // Handle the case where neither SAML identity provider is available
+    console.error("No SAML identity provider is enabled for the organization.");
   }
-});
-// Retrieve all members of a SSO enabled organization
+} catch (error) {
+  console.error("Request failed due to the following response errors:", error);
+}
+
+// Unused variables (commented out for now)
+// const retryAfter;
+// const id;
+// const newThrottledOctokitInstance;
+// const ThrottledOctokitInstance;
+// const membersWithRole;
+// const mergeArrays;
+// const ssoCollab;
+// const report;
+// const json;
+
 async function ssoEmail(emailArray) {
   try {
-    let paginationMember = null
+    let paginationMember = null;
 
     const query = /* GraphQL */ `
       query ($org: String!, $cursorID: String) {
@@ -374,38 +355,38 @@ async function ssoEmail(emailArray) {
           }
         }
       }
-    `
+    `;
 
-    let hasNextPageMember = false
-    let dataJSON = null
+    let hasNextPageMember = false;
+    let dataJSON = null;
 
     do {
       dataJSON = await octokit.graphql({
         query,
         org: org,
         cursorID: paginationMember
-      })
+      });
 
-      const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges
+      const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges;
 
-      hasNextPageMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.hasNextPage
+      hasNextPageMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.hasNextPage;
 
       for (const email of emails) {
         if (hasNextPageMember) {
-          paginationMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.endCursor
+          paginationMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.endCursor;
         } else {
-          paginationMember = null
+          paginationMember = null;
         }
 
-        if (!email.node.user) continue
-        const login = email.node.user.login
-        const ssoEmail = email.node.samlIdentity.nameId
+        if (!email.node.user) continue;
+        const login = email.node.user.login;
+        const ssoEmail = email.node.samlIdentity.nameId;
 
-        emailArray.push({ login, ssoEmail })
+        emailArray.push({ login, ssoEmail });
       }
-    } while (hasNextPageMember)
+    } while (hasNextPageMember);
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error.message);
   }
 }
 const { Octokit } = require("@octokit/core");
