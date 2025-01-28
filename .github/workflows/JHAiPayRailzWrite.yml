@@ -10,7 +10,7 @@ on:
     #        │ │ ┌────────── day (month)
     #        │ │ │ ┌──────── month
     #        │ │ │ │ ┌────── day (week)
-    - cron: '30 9 30 * *'
+    - cron: '05 10 30 * *'
 
 jobs:
   github-collaborator-report:
