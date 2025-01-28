@@ -1,0 +1,7 @@
+Repository,Repo Visibility,Username,Full name,SSO email,Verified email,Public email,Repo permission,Organization role,Active contributions,Total contributions,User created,User updated,Organization
+PermissionsTesting,PRIVATE,cwhinton,,,chhinton@jhacorp.com,,MAINTAIN,MEMBER,FALSE,,2015-03-27,2025-01-01,JHAAdmins
+Repo123,PRIVATE,Jonathan-M-Ball,Jonathan Ball,,"jonball@jackhenry.com, jonball@jhacorp.com",jonathan_m_ball@yahoo.com,ADMIN,ADMIN,TRUE,3,2014-10-29,2025-01-26,JHAAdmins
+TeamsRepo,PRIVATE,galegleasonJHA,Gale Gleason,,"ggleason@jhacorp.com, GGleason@jackhenry.com",,ADMIN,ADMIN,FALSE,,2022-05-11,2024-12-20,JHAAdmins
+cwhplay,INTERNAL,cwhinton,,,chhinton@jhacorp.com,,ADMIN,MEMBER,FALSE,,2015-03-27,2025-01-01,JHAAdmins
+github-org-repo-collaborator-action,PUBLIC,cwhinton,,,chhinton@jhacorp.com,,READ,MEMBER,FALSE,,2015-03-27,2025-01-01,JHAAdmins
+testdevsecinternal,INTERNAL,galegleasonJHA,Gale Gleason,,"ggleason@jhacorp.com, GGleason@jackhenry.com",,ADMIN,ADMIN,FALSE,,2022-05-11,2024-12-20,JHAAdmins
