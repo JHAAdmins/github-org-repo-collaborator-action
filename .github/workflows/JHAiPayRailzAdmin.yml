@@ -10,7 +10,7 @@ on:
     #        │ │ ┌────────── day (month)
     #        │ │ │ ┌──────── month
     #        │ │ │ │ ┌────── day (week)
-    - cron: '6 0 1 * *'
+    - cron: '30 2 30 * *'
 
 jobs:
   github-collaborator-report:
@@ -23,13 +23,11 @@ jobs:
 
       - name: Get repo collaborator report
         uses: JHAAdmins/github-org-repo-collaborator-action@v2.2
-        continue-on-error: true
         with:
           token: ${{ secrets.GITHUBREPOPERMS }}
           org: 'JHAiPayRailz'
           affil: 'ALL'
           permission: 'ADMIN'
-          days: '0'
           json: 'FALSE'
           appid: ${{ secrets.APPID }}
           privatekey: ${{ secrets.PRIVATEKEY }}
