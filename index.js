@@ -18,11 +18,11 @@ const committerName = core.getInput('committer-name', { required: false }) || 'g
 const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com'
 const jsonExport = core.getInput('json', { required: false }) || 'FALSE'
 const affil = core.getInput('affil', { required: false }) || 'ALL'
-const days = core.getInput('days', { required: false }) || '90'
+//const days = core.getInput('days', { required: false }) || '90'
 
-const to = new Date()
-const from = new Date()
-from.setDate(to.getDate() - days)
+//const to = new Date()
+//const from = new Date()
+//from.setDate(to.getDate() - days)
 
 const { Octokit } = require("@octokit/core");
 const { throttling } = require("@octokit/plugin-throttling");
