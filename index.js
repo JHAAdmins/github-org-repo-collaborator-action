@@ -134,7 +134,7 @@ async function repoNames(collabsArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(60000)
+      await sleep(30000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
@@ -239,7 +239,7 @@ async function collabRole(repo, collabsArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(60000)
+      await sleep(30000)
     } while (hasNextPage)
   } catch (error) {}
 }
@@ -332,7 +332,7 @@ async function ssoEmail(emailArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(60000)
+      await sleep(30000)
     } while (hasNextPageMember)
   } catch (error) {
     core.setFailed(error.message)
@@ -387,7 +387,7 @@ async function membersWithRole(memberArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(60000)
+      await sleep(30000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
