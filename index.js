@@ -134,7 +134,7 @@ async function repoNames(collabsArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(5000)
+      await sleep(60000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
@@ -219,27 +219,27 @@ async function collabRole(repo, collabsArray) {
         const orgRepo = repo.name
         const visibility = repo.visibility
 
-        const activeContrib = role.node.contributionsCollection.hasAnyContributions
-        const commitContrib = role.node.contributionsCollection.totalCommitContributions
-        const issueContrib = role.node.contributionsCollection.totalIssueContributions
-        const prContrib = role.node.contributionsCollection.totalPullRequestContributions
-        const prreviewContrib = role.node.contributionsCollection.totalPullRequestReviewContributions
-        const repoIssueContrib = role.node.contributionsCollection.totalRepositoriesWithContributedIssues
-        const repoCommitContrib = role.node.contributionsCollection.totalRepositoriesWithContributedCommits
-        const repoPullRequestContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequests
-        const repoPullRequestReviewContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequestReviews
+        //const activeContrib = role.node.contributionsCollection.hasAnyContributions
+        //const commitContrib = role.node.contributionsCollection.totalCommitContributions
+        //const issueContrib = role.node.contributionsCollection.totalIssueContributions
+        //const prContrib = role.node.contributionsCollection.totalPullRequestContributions
+        //const prreviewContrib = role.node.contributionsCollection.totalPullRequestReviewContributions
+        //const repoIssueContrib = role.node.contributionsCollection.totalRepositoriesWithContributedIssues
+        //const repoCommitContrib = role.node.contributionsCollection.totalRepositoriesWithContributedCommits
+        //const repoPullRequestContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequests
+        //const repoPullRequestReviewContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequestReviews
 
-        const sumContrib = commitContrib + issueContrib + prContrib + prreviewContrib + repoIssueContrib + repoCommitContrib + repoPullRequestContrib + repoPullRequestReviewContrib || ''
+        //const sumContrib = commitContrib + issueContrib + prContrib + prreviewContrib + repoIssueContrib + repoCommitContrib + repoPullRequestContrib + repoPullRequestReviewContrib || ''
 
         if (role.permission === rolePermission) {
-          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt, activeContrib, sumContrib })
+          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt,  })
         } else if (rolePermission === 'ALL') {
-          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt, activeContrib, sumContrib })
+          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt,  })
         }
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(5000)
+      await sleep(60000)
     } while (hasNextPage)
   } catch (error) {}
 }
@@ -332,7 +332,7 @@ async function ssoEmail(emailArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(5000)
+      await sleep(60000)
     } while (hasNextPageMember)
   } catch (error) {
     core.setFailed(error.message)
@@ -387,7 +387,7 @@ async function membersWithRole(memberArray) {
       }
 
       // Introduce a delay of 5 seconds between requests
-      await sleep(5000)
+      await sleep(60000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
@@ -408,8 +408,8 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const orgRepo = collab.orgRepo
       const createdAt = collab.createdAt
       const updatedAt = collab.updatedAt
-      const activeContrib = collab.activeContrib
-      const sumContrib = collab.sumContrib
+      //const activeContrib = collab.activeContrib
+      //const sumContrib = collab.sumContrib
 
       const ssoEmail = emailArray.find((email) => email.login === login)
       const ssoEmailValue = ssoEmail ? ssoEmail.ssoEmail : ''
@@ -417,7 +417,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const member = memberArray.find((member) => member.login === login)
       const memberValue = member ? member.role : 'OUTSIDE COLLABORATOR'
 
-      ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, publicEmail, verifiedEmail, permission, org, createdAt, updatedAt, activeContrib, sumContrib, memberValue }
+      ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, publicEmail, verifiedEmail, permission, org, createdAt, updatedAt, memberValue }
 
       mergeArray.push(ssoCollab)
     })
@@ -440,8 +440,8 @@ async function report(mergeArray) {
       publicEmail: 'Public email',
       permission: 'Repo permission',
       memberValue: 'Organization role',
-      activeContrib: 'Active contributions',
-      sumContrib: 'Total contributions',
+      // activeContrib: 'Active contributions',
+      // sumContrib: 'Total contributions',
       createdAt: 'User created',
       updatedAt: 'User updated',
       org: 'Organization'
