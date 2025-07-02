@@ -2,7 +2,7 @@ const core = require('@actions/core')
 const github = require('@actions/github')
 const { stringify } = require('csv-stringify/sync')
 const arraySort = require('array-sort')
-const token = core.getInput('token', { required: true })
+const token = core.getInput('token', { required: false })
 const eventPayload = require(process.env.GITHUB_EVENT_PATH)
 const org = core.getInput('org', { required: false }) || eventPayload.organization.login
 const { owner, repo } = github.context.repo
@@ -18,48 +18,12 @@ const committerName = core.getInput('committer-name', { required: false }) || 'g
 const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com'
 const jsonExport = core.getInput('json', { required: false }) || 'FALSE'
 const affil = core.getInput('affil', { required: false }) || 'ALL'
-//const days = core.getInput('days', { required: false }) || '90'
+const days = core.getInput('days', { required: false }) || '90'
 
-//const to = new Date()
-//const from = new Date()
-//from.setDate(to.getDate() - days)
+const to = new Date()
+const from = new Date()
+from.setDate(to.getDate() - days)
 
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
-
-const ThrottledOctokitPlugin = require("@octokit/plugin-throttling").ThrottledOctokitPlugin;
-
-const throttledOctokit = new ThrottledOctokitPlugin({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      throttledOctokit.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
-      }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      throttledOctokit.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
-
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
-
-      return true; // Indicates that the request should be retried
-    }
-  }
-});
 let octokit = null
 let id = []
 
@@ -75,6 +39,11 @@ if (appId && privateKey && installationId) {
   })
 } else {
   octokit = github.getOctokit(token)
+}
+
+// Utility function to introduce a delay
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // Orchestrator
@@ -118,42 +87,7 @@ async function orgID() {
     core.setFailed(error.message)
   }
 }
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
 
-const throttledOctokitInstance = Octokit.plugin(throttling);
-
-let newThrottledOctokitInstance = new ThrottledOctokit({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      throttledOctokitInstance.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
-      }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      throttledOctokitInstance.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
-
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
-
-      return true; // Indicates that the request should be retried
-    }
-  }
-});
 // Query all organization repository names
 async function repoNames(collabsArray) {
   try {
@@ -161,7 +95,7 @@ async function repoNames(collabsArray) {
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
-          repositories(first: 100, after: $cursorID) {
+          repositories(first: 50, after: $cursorID) {
             nodes {
               name
               visibility
@@ -198,84 +132,118 @@ async function repoNames(collabsArray) {
         await collabRole(repo, collabsArray)
         console.log(repo.name)
       }
+
+      // Introduce a delay of 5 seconds between requests
+      await sleep(5000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
   }
 }
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
 
-const ThrottledOctokitInstance = Octokit.plugin(throttling);
-
-let newOctokitInstance = new ThrottledOctokit({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      newOctokitInstance.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
-      }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      newOctokitInstance.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
-
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
-
-      return true; // Indicates that the request should be retried
-    }
-  }
-});
 // Query all repository collaborators
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
-
-const ThrottledOctokitPlugin = Octokit.plugin(throttling);
-
-const octokitInstance = new ThrottledOctokit({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
+async function collabRole(repo, collabsArray) {
+  try {
+    let endCursor = null
+    const query = /* GraphQL */ `
+      query ($owner: String!, $id: ID!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
+        organization(login: $owner) {
+          repository(name: $orgRepo) {
+            collaborators(affiliation: $affil, first: 50, after: $cursorID) {
+              edges {
+                node {
+                  login
+                  name
+                  email
+                  organizationVerifiedDomainEmails(login: $owner)
+                  createdAt
+                  updatedAt
+                  updatedAt
+                  contributionsCollection(organizationID: $id, from: $from, to: $to) {
+                    hasAnyContributions
+                    totalCommitContributions
+                    totalIssueContributions
+                    totalPullRequestContributions
+                    totalPullRequestReviewContributions
+                    totalRepositoriesWithContributedIssues
+                    totalRepositoriesWithContributedCommits
+                    totalRepositoriesWithContributedPullRequests
+                    totalRepositoriesWithContributedPullRequestReviews
+                  }
+                }
+                permission
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
       }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
+    `
 
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
+    let hasNextPage = false
+    let dataJSON = null
 
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
+    do {
+      dataJSON = await octokit.graphql({
+        query,
+        owner: org,
+        id: id,
+        orgRepo: repo.name,
+        affil: affil,
+        from: from,
+        to: to,
+        cursorID: endCursor
+      })
 
-      return true; // Indicates that the request should be retried
-    }
-  }
-});
+      const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role)
+
+      hasNextPage = dataJSON.organization.repository.collaborators.pageInfo.hasNextPage
+
+      for (const role of roles) {
+        if (hasNextPage) {
+          endCursor = dataJSON.organization.repository.collaborators.pageInfo.endCursor
+        } else {
+          endCursor = null
+        }
+
+        const login = role.node.login
+        const name = role.node.name || ''
+        const publicEmail = role.node.email || ''
+        const verifiedEmail = role.node.organizationVerifiedDomainEmails ? role.node.organizationVerifiedDomainEmails.join(', ') : ''
+        const createdAt = role.node.createdAt.slice(0, 10) || ''
+        const updatedAt = role.node.updatedAt.slice(0, 10) || ''
+        const permission = role.permission
+        const orgRepo = repo.name
+        const visibility = repo.visibility
+
+        const activeContrib = role.node.contributionsCollection.hasAnyContributions
+        const commitContrib = role.node.contributionsCollection.totalCommitContributions
+        const issueContrib = role.node.contributionsCollection.totalIssueContributions
+        const prContrib = role.node.contributionsCollection.totalPullRequestContributions
+        const prreviewContrib = role.node.contributionsCollection.totalPullRequestReviewContributions
+        const repoIssueContrib = role.node.contributionsCollection.totalRepositoriesWithContributedIssues
+        const repoCommitContrib = role.node.contributionsCollection.totalRepositoriesWithContributedCommits
+        const repoPullRequestContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequests
+        const repoPullRequestReviewContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequestReviews
+
+        const sumContrib = commitContrib + issueContrib + prContrib + prreviewContrib + repoIssueContrib + repoCommitContrib + repoPullRequestContrib + repoPullRequestReviewContrib || ''
+
+        if (role.permission === rolePermission) {
+          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt, activeContrib, sumContrib })
+        } else if (rolePermission === 'ALL') {
+          collabsArray.push({ orgRepo, login, name, publicEmail, verifiedEmail, permission, visibility, org, createdAt, updatedAt, activeContrib, sumContrib })
+        }
+      }
+
+      // Introduce a delay of 5 seconds between requests
+      await sleep(5000)
+    } while (hasNextPage)
+  } catch (error) {}
+}
+
 // Check if the organization has SSO enabled
 async function ssoCheck(emailArray) {
   try {
@@ -285,57 +253,35 @@ async function ssoCheck(emailArray) {
           samlIdentityProvider {
             id
           }
-          enterprise {
-            samlIdentityProvider {
-              id
-            }
-          }
         }
       }
     `
 
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
+    dataJSON = await octokit.graphql({
+      query,
+      org: org
+    })
 
-try {
-  const dataJSON = await octokit.graphql({
-    query,
-    org: org
-  });
-
-  const orgSamlProvider = dataJSON.organization.samlIdentityProvider;
-  const enterpriseSamlProvider = dataJSON.organization.enterprise.samlIdentityProvider;
-
-  if (orgSamlProvider || enterpriseSamlProvider) {
-    await ssoEmail(emailArray);
-  } else {
-    // Handle the case where neither SAML identity provider is available
-    console.error("No SAML identity provider is enabled for the organization.");
+    if (dataJSON.organization.samlIdentityProvider) {
+      await ssoEmail(emailArray)
+    } else {
+      // do nothing
+    }
+  } catch (error) {
+    core.setFailed(error.message)
   }
-} catch (error) {
-  console.error("Request failed due to the following response errors:", error);
 }
 
-// Unused variables (commented out for now)
-// const retryAfter;
-// const id;
-// const newThrottledOctokitInstance;
-// const ThrottledOctokitInstance;
-// const membersWithRole;
-// const mergeArrays;
-// const ssoCollab;
-// const report;
-// const json;
-
+// Retrieve all members of a SSO enabled organization
 async function ssoEmail(emailArray) {
   try {
-    let paginationMember = null;
+    let paginationMember = null
 
     const query = /* GraphQL */ `
       query ($org: String!, $cursorID: String) {
         organization(login: $org) {
           samlIdentityProvider {
-            externalIdentities(first: 100, after: $cursorID) {
+            externalIdentities(first: 50, after: $cursorID) {
               totalCount
               edges {
                 node {
@@ -355,76 +301,44 @@ async function ssoEmail(emailArray) {
           }
         }
       }
-    `;
+    `
 
-    let hasNextPageMember = false;
-    let dataJSON = null;
+    let hasNextPageMember = false
+    let dataJSON = null
 
     do {
       dataJSON = await octokit.graphql({
         query,
         org: org,
         cursorID: paginationMember
-      });
+      })
 
-      const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges;
+      const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges
 
-      hasNextPageMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.hasNextPage;
+      hasNextPageMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.hasNextPage
 
       for (const email of emails) {
         if (hasNextPageMember) {
-          paginationMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.endCursor;
+          paginationMember = dataJSON.organization.samlIdentityProvider.externalIdentities.pageInfo.endCursor
         } else {
-          paginationMember = null;
+          paginationMember = null
         }
 
-        if (!email.node.user) continue;
-        const login = email.node.user.login;
-        const ssoEmail = email.node.samlIdentity.nameId;
+        if (!email.node.user) continue
+        const login = email.node.user.login
+        const ssoEmail = email.node.samlIdentity.nameId
 
-        emailArray.push({ login, ssoEmail });
+        emailArray.push({ login, ssoEmail })
       }
-    } while (hasNextPageMember);
+
+      // Introduce a delay of 5 seconds between requests
+      await sleep(5000)
+    } while (hasNextPageMember)
   } catch (error) {
-    core.setFailed(error.message);
+    core.setFailed(error.message)
   }
 }
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
 
-ThrottledOctokitInstance = Octokit.plugin(throttling);
-
-octokitInstance = new ThrottledOctokit({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
-      }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
-
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
-
-      return true; // Indicates that the request should be retried
-    }
-  }
-});
 // Query all organization members
 async function membersWithRole(memberArray) {
   try {
@@ -432,7 +346,7 @@ async function membersWithRole(memberArray) {
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
-          membersWithRole(first: 100, after: $cursorID) {
+          membersWithRole(first: 50, after: $cursorID) {
             edges {
               cursor
               node {
@@ -471,52 +385,15 @@ async function membersWithRole(memberArray) {
         }
         memberArray.push({ login: member.node.login, role: member.role })
       }
+
+      // Introduce a delay of 5 seconds between requests
+      await sleep(5000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
   }
 }
-const { Octokit } = require("@octokit/core");
-const { throttling } = require("@octokit/plugin-throttling");
 
-// Remove the existing declaration of 'ThrottledOctokit'
-delete ThrottledOctokit;
-
-// Declare 'ThrottledOctokit' with the desired value
-delete ThrottledOctokit;
-const ThrottledOctokit = Octokit.plugin(throttling);
-
-octokitInstance = new ThrottledOctokit({
-  auth: "GITHUBREPOPERMS",
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-
-      // Check if the remaining requests are less than 1000
-      if (options.rate.limit - options.rate.used < 1000) {
-        console.log(`Pausing requests. Retry after ${retryAfter} seconds`);
-        await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // Pause for 10 minutes
-        return true;
-      }
-    },
-    onAbuseLimit: (retryAfter, options) => {
-      octokitInstance.log.warn(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-
-      // Convert 10 minutes to milliseconds
-      const waitTime = 10 * 60 * 1000;
-
-      setTimeout(() => {
-        // Code to retry the request or resume execution goes here
-      }, waitTime);
-
-      return true; // Indicates that the request should be retried
-    }
-  }
-});
 // Append SSO email and org members by login key
 async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
   try {
@@ -544,6 +421,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
 
       mergeArray.push(ssoCollab)
     })
+    console.log(JSON.stringify(emailArray))
   } catch (error) {
     core.setFailed(error.message)
   }
