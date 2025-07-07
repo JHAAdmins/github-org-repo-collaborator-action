@@ -201,7 +201,7 @@ async function collabRole(repo, collabsArray) {
 
         const login = role.node.login
         const name = role.node.name || ''
-      //  const publicEmail = role.node.email || ''
+       // const publicEmail = role.node.email || ''
         const verifiedEmail = role.node.organizationVerifiedDomainEmails ? role.node.organizationVerifiedDomainEmails.join(', ') : ''
         const createdAt = role.node.createdAt.slice(0, 10) || ''
         const updatedAt = role.node.updatedAt.slice(0, 10) || ''
@@ -390,7 +390,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
     collabsArray.forEach((collab) => {
       const login = collab.login
       const name = collab.name
-    //  const publicEmail = collab.publicEmail
+     // const publicEmail = collab.publicEmail
       const verifiedEmail = collab.verifiedEmail
       const permission = collab.permission
       const visibility = collab.visibility
@@ -427,7 +427,7 @@ async function report(mergeArray) {
       name: 'Full name',
       ssoEmailValue: 'SSO email',
       verifiedEmail: 'Verified email',
-    //  publicEmail: 'Public email',
+      //publicEmail: 'Public email',
       permission: 'Repo permission',
       memberValue: 'Organization role',
       // activeContrib: 'Active contributions',
