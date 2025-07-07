@@ -133,7 +133,7 @@ async function repoNames(collabsArray) {
         console.log(repo.name)
       }
 
-      // Introduce a delay of 5 seconds between requests
+      // Introduce a delay of 30 seconds between requests
       await sleep(30000)
     } while (hasNextPage)
   } catch (error) {
@@ -228,7 +228,7 @@ async function collabRole(repo, collabsArray) {
         }
       }
 
-      // Introduce a delay of 5 seconds between requests
+      // Introduce a delay of 30 seconds between requests
       await sleep(30000)
     } while (hasNextPage)
   } catch (error) {}
@@ -321,7 +321,7 @@ async function ssoEmail(emailArray) {
         emailArray.push({ login, ssoEmail })
       }
 
-      // Introduce a delay of 5 seconds between requests
+      // Introduce a delay of 30 seconds between requests
       await sleep(30000)
     } while (hasNextPageMember)
   } catch (error) {
