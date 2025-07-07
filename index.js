@@ -159,16 +159,6 @@ async function collabRole(repo, collabsArray) {
                   createdAt
                   updatedAt
                   updatedAt
-                  contributionsCollection(organizationID: $id, from: $from, to: $to) {
-                    hasAnyContributions
-                    totalCommitContributions
-                    totalIssueContributions
-                    totalPullRequestContributions
-                    totalPullRequestReviewContributions
-                    totalRepositoriesWithContributedIssues
-                    totalRepositoriesWithContributedCommits
-                    totalRepositoriesWithContributedPullRequests
-                    totalRepositoriesWithContributedPullRequestReviews
                   }
                 }
                 permission
