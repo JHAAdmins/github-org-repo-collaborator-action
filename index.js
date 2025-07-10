@@ -46,6 +46,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Retry function with exponential backoff
+async function retryWithBackoff(fn, retries = 5, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn()
+    } catch (error) {
+      if (i === retries - 1 || !error.message.includes('secondary rate limit')) {
+        throw error
+      }
+      console.warn(`Rate limit hit. Retrying in ${delay * Math.pow(2, i)}ms...`)
+      await sleep(delay * Math.pow(2, i)) // Exponential backoff
+    }
+  }
+}
+
 // Orchestrator
 ;(async () => {
   try {
@@ -77,10 +92,12 @@ async function orgID() {
         }
       }
     `
-    dataJSON = await octokit.graphql({
-      query,
-      org
-    })
+    const dataJSON = await retryWithBackoff(() =>
+      octokit.graphql({
+        query,
+        org
+      })
+    )
 
     id = dataJSON.organization.id
   } catch (error) {
@@ -95,7 +112,7 @@ async function repoNames(collabsArray) {
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
-          repositories(first: 50, after: $cursorID) {
+          repositories(first: 20, after: $cursorID) { // Reduced page size to 20
             nodes {
               name
               visibility
@@ -110,14 +127,15 @@ async function repoNames(collabsArray) {
     `
 
     let hasNextPage = false
-    let dataJSON = null
 
     do {
-      dataJSON = await octokit.graphql({
-        query,
-        owner: org,
-        cursorID: endCursor
-      })
+      const dataJSON = await retryWithBackoff(() =>
+        octokit.graphql({
+          query,
+          owner: org,
+          cursorID: endCursor
+        })
+      )
 
       const repos = dataJSON.organization.repositories.nodes.map((repo) => repo)
 
@@ -133,8 +151,8 @@ async function repoNames(collabsArray) {
         console.log(repo.name)
       }
 
-      // Introduce a delay of 30 seconds between requests
-      await sleep(30000)
+      // Introduce a delay of 2 seconds between requests
+      await sleep(2000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
@@ -149,7 +167,7 @@ async function collabRole(repo, collabsArray) {
       query ($owner: String!, $id: ID!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
         organization(login: $owner) {
           repository(name: $orgRepo) {
-            collaborators(affiliation: $affil, first: 50, after: $cursorID) {
+            collaborators(affiliation: $affil, first: 20, after: $cursorID) { // Reduced page size to 20
               edges {
                 node {
                   login
@@ -158,8 +176,6 @@ async function collabRole(repo, collabsArray) {
                   organizationVerifiedDomainEmails(login: $owner)
                   createdAt
                   updatedAt
-                  updatedAt
-                  }
                 }
                 permission
               }
@@ -174,19 +190,20 @@ async function collabRole(repo, collabsArray) {
     `
 
     let hasNextPage = false
-    let dataJSON = null
 
     do {
-      dataJSON = await octokit.graphql({
-        query,
-        owner: org,
-        id: id,
-        orgRepo: repo.name,
-        affil: affil,
-        from: from,
-        to: to,
-        cursorID: endCursor
-      })
+      const dataJSON = await retryWithBackoff(() =>
+        octokit.graphql({
+          query,
+          owner: org,
+          id: id,
+          orgRepo: repo.name,
+          affil: affil,
+          from: from,
+          to: to,
+          cursorID: endCursor
+        })
+      )
 
       const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role)
 
@@ -201,37 +218,48 @@ async function collabRole(repo, collabsArray) {
 
         const login = role.node.login
         const name = role.node.name || ''
-       // const publicEmail = role.node.email || ''
-        const verifiedEmail = role.node.organizationVerifiedDomainEmails ? role.node.organizationVerifiedDomainEmails.join(', ') : ''
+        const verifiedEmail = role.node.organizationVerifiedDomainEmails
+          ? role.node.organizationVerifiedDomainEmails.join(', ')
+          : ''
         const createdAt = role.node.createdAt.slice(0, 10) || ''
         const updatedAt = role.node.updatedAt.slice(0, 10) || ''
         const permission = role.permission
         const orgRepo = repo.name
         const visibility = repo.visibility
 
-        //const activeContrib = role.node.contributionsCollection.hasAnyContributions
-        //const commitContrib = role.node.contributionsCollection.totalCommitContributions
-        //const issueContrib = role.node.contributionsCollection.totalIssueContributions
-        //const prContrib = role.node.contributionsCollection.totalPullRequestContributions
-        //const prreviewContrib = role.node.contributionsCollection.totalPullRequestReviewContributions
-        //const repoIssueContrib = role.node.contributionsCollection.totalRepositoriesWithContributedIssues
-        //const repoCommitContrib = role.node.contributionsCollection.totalRepositoriesWithContributedCommits
-        //const repoPullRequestContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequests
-        //const repoPullRequestReviewContrib = role.node.contributionsCollection.totalRepositoriesWithContributedPullRequestReviews
-
-        //const sumContrib = commitContrib + issueContrib + prContrib + prreviewContrib + repoIssueContrib + repoCommitContrib + repoPullRequestContrib + repoPullRequestReviewContrib || ''
-
         if (role.permission === rolePermission) {
-          collabsArray.push({ orgRepo, login, name, verifiedEmail, permission, visibility, org, createdAt, updatedAt,  })
+          collabsArray.push({
+            orgRepo,
+            login,
+            name,
+            verifiedEmail,
+            permission,
+            visibility,
+            org,
+            createdAt,
+            updatedAt
+          })
         } else if (rolePermission === 'ALL') {
-          collabsArray.push({ orgRepo, login, name, verifiedEmail, permission, visibility, org, createdAt, updatedAt,  })
+          collabsArray.push({
+            orgRepo,
+            login,
+            name,
+            verifiedEmail,
+            permission,
+            visibility,
+            org,
+            createdAt,
+            updatedAt
+          })
         }
       }
 
-      // Introduce a delay of 30 seconds between requests
-      await sleep(30000)
+      // Introduce a delay of 2 seconds between requests
+      await sleep(2000)
     } while (hasNextPage)
-  } catch (error) {}
+  } catch (error) {
+    core.setFailed(error.message)
+  }
 }
 
 // Check if the organization has SSO enabled
@@ -247,22 +275,22 @@ async function ssoCheck(emailArray) {
       }
     `
 
-    dataJSON = await octokit.graphql({
-      query,
-      org: org
-    })
+    const dataJSON = await retryWithBackoff(() =>
+      octokit.graphql({
+        query,
+        org: org
+      })
+    )
 
     if (dataJSON.organization.samlIdentityProvider) {
       await ssoEmail(emailArray)
-    } else {
-      // do nothing
     }
   } catch (error) {
     core.setFailed(error.message)
   }
 }
 
-// Retrieve all members of a SSO enabled organization
+// Retrieve all members of a SSO-enabled organization
 async function ssoEmail(emailArray) {
   try {
     let paginationMember = null
@@ -271,8 +299,7 @@ async function ssoEmail(emailArray) {
       query ($org: String!, $cursorID: String) {
         organization(login: $org) {
           samlIdentityProvider {
-            externalIdentities(first: 50, after: $cursorID) {
-              totalCount
+            externalIdentities(first: 20, after: $cursorID) { // Reduced page size to 20
               edges {
                 node {
                   samlIdentity {
@@ -294,14 +321,15 @@ async function ssoEmail(emailArray) {
     `
 
     let hasNextPageMember = false
-    let dataJSON = null
 
     do {
-      dataJSON = await octokit.graphql({
-        query,
-        org: org,
-        cursorID: paginationMember
-      })
+      const dataJSON = await retryWithBackoff(() =>
+        octokit.graphql({
+          query,
+          org: org,
+          cursorID: paginationMember
+        })
+      )
 
       const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges
 
@@ -321,8 +349,8 @@ async function ssoEmail(emailArray) {
         emailArray.push({ login, ssoEmail })
       }
 
-      // Introduce a delay of 30 seconds between requests
-      await sleep(30000)
+      // Introduce a delay of 2 seconds between requests
+      await sleep(2000)
     } while (hasNextPageMember)
   } catch (error) {
     core.setFailed(error.message)
@@ -336,9 +364,8 @@ async function membersWithRole(memberArray) {
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
-          membersWithRole(first: 50, after: $cursorID) {
+          membersWithRole(first: 20, after: $cursorID) { // Reduced page size to 20
             edges {
-              cursor
               node {
                 login
               }
@@ -354,14 +381,15 @@ async function membersWithRole(memberArray) {
     `
 
     let hasNextPage = false
-    let dataJSON = null
 
     do {
-      dataJSON = await octokit.graphql({
-        query,
-        owner: org,
-        cursorID: endCursor
-      })
+      const dataJSON = await retryWithBackoff(() =>
+        octokit.graphql({
+          query,
+          owner: org,
+          cursorID: endCursor
+        })
+      )
 
       const members = dataJSON.organization.membersWithRole.edges
 
@@ -376,8 +404,8 @@ async function membersWithRole(memberArray) {
         memberArray.push({ login: member.node.login, role: member.role })
       }
 
-      // Introduce a delay of 5 seconds between requests
-      await sleep(30000)
+      // Introduce a delay of 2 seconds between requests
+      await sleep(2000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
@@ -393,7 +421,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
      // const publicEmail = collab.publicEmail
       const verifiedEmail = collab.verifiedEmail
       const permission = collab.permission
-      const visibility = collab.visibility
+      //const visibility = collab.visibility
       const org = collab.org
       const orgRepo = collab.orgRepo
       const createdAt = collab.createdAt
@@ -407,7 +435,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const member = memberArray.find((member) => member.login === login)
       const memberValue = member ? member.role : 'OUTSIDE COLLABORATOR'
 
-      ssoCollab = { orgRepo, visibility, login, name, ssoEmailValue, verifiedEmail, permission, org, createdAt, updatedAt, memberValue }
+      ssoCollab = { orgRepo, login, name, ssoEmailValue, verifiedEmail, permission, org, createdAt, updatedAt, memberValue }
 
       mergeArray.push(ssoCollab)
     })
