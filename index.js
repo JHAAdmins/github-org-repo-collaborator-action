@@ -47,25 +47,31 @@ function sleep(ms) {
 }
 
 // Utility function to log rate limit information
-function logRateLimit(headers) {
+function logRateLimit(headers, location) {
   if (headers) {
-    console.log(`Rate Limit Remaining: ${headers['x-ratelimit-remaining']}`);
-    console.log(`Rate Limit Reset Time: ${new Date(headers['x-ratelimit-reset'] * 1000).toISOString()}`);
+    core.info(`[${location}] Rate Limit Remaining: ${headers['x-ratelimit-remaining']}`);
+    core.info(`[${location}] Rate Limit Reset Time: ${new Date(headers['x-ratelimit-reset'] * 1000).toISOString()}`);
   } else {
-    console.log('Rate limit headers not available.');
+    core.info(`[${location}] Rate limit headers not available.`);
   }
 }
 
 // Retry function with exponential backoff
-async function retryWithBackoff(fn, retries = 5, delay = 2000) {
+async function retryWithBackoff(fn, location, retries = 5, delay = 2000) {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (error) {
+      if (error.response && error.response.headers) {
+        logRateLimit(error.response.headers, location); // Log rate limit info
+      }
+
       if (i === retries - 1 || !error.message.includes('secondary rate limit')) {
+        core.error(`[${location}] Error: ${error.message}`);
         throw error;
       }
-      console.warn(`Rate limit hit. Retrying in ${delay * Math.pow(2, i)}ms...`);
+
+      core.warning(`[${location}] Secondary rate limit hit. Retrying in ${delay * Math.pow(2, i)}ms...`);
       await sleep(delay * Math.pow(2, i)); // Exponential backoff
     }
   }
@@ -104,9 +110,9 @@ async function orgID() {
     `;
     const dataJSON = await retryWithBackoff(async () => {
       const response = await octokit.graphql({ query, org });
-      logRateLimit(response.headers); // Log rate limit info
+      logRateLimit(response.headers, 'orgID'); // Log rate limit info
       return response;
-    });
+    }, 'orgID');
 
     id = dataJSON.organization.id;
   } catch (error) {
@@ -140,9 +146,9 @@ async function repoNames(collabsArray) {
     do {
       const dataJSON = await retryWithBackoff(async () => {
         const response = await octokit.graphql({ query, owner: org, cursorID: endCursor });
-        logRateLimit(response.headers); // Log rate limit info
+        logRateLimit(response.headers, 'repoNames'); // Log rate limit info
         return response;
-      });
+        }, 'repoNames');
 
       const repos = dataJSON.organization.repositories.nodes.map((repo) => repo);
 
@@ -181,7 +187,6 @@ async function collabRole(repo, collabsArray) {
                   name
                   email
                   organizationVerifiedDomainEmails(login: $owner)
-                  createdAt
                   updatedAt
                 }
                 permission
@@ -210,9 +215,9 @@ async function collabRole(repo, collabsArray) {
           to: to,
           cursorID: endCursor,
         });
-        logRateLimit(response.headers); // Log rate limit info
+        logRateLimit(response.headers, 'collabRole'); // Log rate limit info
         return response;
-      });
+      }, 'collabRole');
 
       const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role);
 
@@ -230,7 +235,7 @@ async function collabRole(repo, collabsArray) {
         const verifiedEmail = role.node.organizationVerifiedDomainEmails
           ? role.node.organizationVerifiedDomainEmails.join(', ')
           : '';
-        const createdAt = role.node.createdAt.slice(0, 10) || '';
+       // const createdAt = role.node.createdAt.slice(0, 10) || '';
         const updatedAt = role.node.updatedAt.slice(0, 10) || '';
         const permission = role.permission;
         const orgRepo = repo.name;
@@ -245,7 +250,6 @@ async function collabRole(repo, collabsArray) {
             permission,
             visibility,
             org,
-            createdAt,
             updatedAt,
           });
         } else if (rolePermission === 'ALL') {
@@ -257,7 +261,6 @@ async function collabRole(repo, collabsArray) {
             permission,
             visibility,
             org,
-            createdAt,
             updatedAt,
           });
         }
@@ -333,12 +336,11 @@ async function ssoEmail(emailArray) {
     let hasNextPageMember = false
 
     do {
-      const dataJSON = await retryWithBackoff(() =>
-        octokit.graphql({
-          query,
-          org: org,
-          cursorID: paginationMember
-        })
+     const dataJSON = await retryWithBackoff(async () => {
+        const response = await octokit.graphql({ query, org: org, cursorID: paginationMember });
+        logRateLimit(response.headers, 'ssoEmail'); // Log rate limit info
+        return response;
+    }, 'ssoEmail');
       )
 
       const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges
@@ -393,12 +395,11 @@ async function membersWithRole(memberArray) {
     let hasNextPage = false
 
     do {
-      const dataJSON = await retryWithBackoff(() =>
-        octokit.graphql({
-          query,
-          owner: org,
-          cursorID: endCursor
-        })
+      const dataJSON = await retryWithBackoff(async () => {
+        const response = await octokit.graphql({ query, owner: org, cursorID: endCursor });
+        logRateLimit(response.headers, 'membersWithRole'); // Log rate limit info
+        return response;
+    }, 'membersWithRole');
       )
 
       const members = dataJSON.organization.membersWithRole.edges
@@ -434,7 +435,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const visibility = collab.visibility
       const org = collab.org
       const orgRepo = collab.orgRepo
-      const createdAt = collab.createdAt
+      //const createdAt = collab.createdAt
       const updatedAt = collab.updatedAt
       //const activeContrib = collab.activeContrib
       //const sumContrib = collab.sumContrib
@@ -445,7 +446,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const member = memberArray.find((member) => member.login === login)
       const memberValue = member ? member.role : 'OUTSIDE COLLABORATOR'
 
-      ssoCollab = { orgRepo, login, name, ssoEmailValue, verifiedEmail, permission, org, createdAt, updatedAt, memberValue }
+      ssoCollab = { orgRepo, login, name, ssoEmailValue, verifiedEmail, permission, org, updatedAt, memberValue }
 
       mergeArray.push(ssoCollab)
     })
@@ -469,7 +470,7 @@ async function report(mergeArray) {
       memberValue: 'Organization role',
       // activeContrib: 'Active contributions',
       // sumContrib: 'Total contributions',
-      createdAt: 'User created',
+      //createdAt: 'User created',
       updatedAt: 'User updated',
       org: 'Organization'
     }
