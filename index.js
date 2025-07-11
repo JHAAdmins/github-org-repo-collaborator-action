@@ -1,31 +1,31 @@
-const core = require('@actions/core')
-const github = require('@actions/github')
-const { stringify } = require('csv-stringify/sync')
-const arraySort = require('array-sort')
-const token = core.getInput('token', { required: false })
-const eventPayload = require(process.env.GITHUB_EVENT_PATH)
-const org = core.getInput('org', { required: false }) || eventPayload.organization.login
-const { owner, repo } = github.context.repo
-const { GitHub } = require('@actions/github/lib/utils')
-const { createAppAuth } = require('@octokit/auth-app')
+const core = require('@actions/core');
+const github = require('@actions/github');
+const { stringify } = require('csv-stringify/sync');
+const arraySort = require('array-sort');
+const token = core.getInput('token', { required: false });
+const eventPayload = require(process.env.GITHUB_EVENT_PATH);
+const org = core.getInput('org', { required: false }) || eventPayload.organization.login;
+const { owner, repo } = github.context.repo;
+const { GitHub } = require('@actions/github/lib/utils');
+const { createAppAuth } = require('@octokit/auth-app');
 
-const appId = core.getInput('appid', { required: false })
-const privateKey = core.getInput('privatekey', { required: false })
-const installationId = core.getInput('installationid', { required: false })
+const appId = core.getInput('appid', { required: false });
+const privateKey = core.getInput('privatekey', { required: false });
+const installationId = core.getInput('installationid', { required: false });
 
-const rolePermission = core.getInput('permission', { required: false }) || 'ADMIN'
-const committerName = core.getInput('committer-name', { required: false }) || 'github-actions'
-const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com'
-const jsonExport = core.getInput('json', { required: false }) || 'FALSE'
-const affil = core.getInput('affil', { required: false }) || 'ALL'
-const days = core.getInput('days', { required: false }) || '90'
+const rolePermission = core.getInput('permission', { required: false }) || 'ADMIN';
+const committerName = core.getInput('committer-name', { required: false }) || 'github-actions';
+const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com';
+const jsonExport = core.getInput('json', { required: false }) || 'FALSE';
+const affil = core.getInput('affil', { required: false }) || 'ALL';
+const days = core.getInput('days', { required: false }) || '90';
 
-const to = new Date()
-const from = new Date()
-from.setDate(to.getDate() - days)
+const to = new Date();
+const from = new Date();
+from.setDate(to.getDate() - days);
 
-let octokit = null
-let id = []
+let octokit = null;
+let id = [];
 
 // GitHub App authentication
 if (appId && privateKey && installationId) {
@@ -34,53 +34,63 @@ if (appId && privateKey && installationId) {
     auth: {
       appId: appId,
       privateKey: privateKey,
-      installationId: installationId
-    }
-  })
+      installationId: installationId,
+    },
+  });
 } else {
-  octokit = github.getOctokit(token)
+  octokit = github.getOctokit(token);
 }
 
 // Utility function to introduce a delay
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Utility function to log rate limit information
+function logRateLimit(headers) {
+  if (headers) {
+    console.log(`Rate Limit Remaining: ${headers['x-ratelimit-remaining']}`);
+    console.log(`Rate Limit Reset Time: ${new Date(headers['x-ratelimit-reset'] * 1000).toISOString()}`);
+  } else {
+    console.log('Rate limit headers not available.');
+  }
 }
 
 // Retry function with exponential backoff
 async function retryWithBackoff(fn, retries = 5, delay = 2000) {
   for (let i = 0; i < retries; i++) {
     try {
-      return await fn()
+      return await fn();
     } catch (error) {
       if (i === retries - 1 || !error.message.includes('secondary rate limit')) {
-        throw error
+        throw error;
       }
-      console.warn(`Rate limit hit. Retrying in ${delay * Math.pow(2, i)}ms...`)
-      await sleep(delay * Math.pow(2, i)) // Exponential backoff
+      console.warn(`Rate limit hit. Retrying in ${delay * Math.pow(2, i)}ms...`);
+      await sleep(delay * Math.pow(2, i)); // Exponential backoff
     }
   }
 }
 
 // Orchestrator
-;(async () => {
+(async () => {
   try {
-    const collabsArray = []
-    const emailArray = []
-    const mergeArray = []
-    const memberArray = []
-    await orgID()
-    await repoNames(collabsArray)
-    await ssoCheck(emailArray)
-    await membersWithRole(memberArray)
-    await mergeArrays(collabsArray, emailArray, mergeArray, memberArray)
-    await report(mergeArray)
+    const collabsArray = [];
+    const emailArray = [];
+    const mergeArray = [];
+    const memberArray = [];
+    await orgID();
+    await repoNames(collabsArray);
+    await ssoCheck(emailArray);
+    await membersWithRole(memberArray);
+    await mergeArrays(collabsArray, emailArray, mergeArray, memberArray);
+    await report(mergeArray);
     if (jsonExport === 'TRUE') {
-      await json(mergeArray)
+      await json(mergeArray);
     }
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error.message);
   }
-})()
+})();
 
 // Find orgid for organization
 async function orgID() {
@@ -91,24 +101,23 @@ async function orgID() {
           id
         }
       }
-    `
-    const dataJSON = await retryWithBackoff(() =>
-      octokit.graphql({
-        query,
-        org
-      })
-    )
+    `;
+    const dataJSON = await retryWithBackoff(async () => {
+      const response = await octokit.graphql({ query, org });
+      logRateLimit(response.headers); // Log rate limit info
+      return response;
+    });
 
-    id = dataJSON.organization.id
+    id = dataJSON.organization.id;
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error.message);
   }
 }
 
 // Query all organization repository names
 async function repoNames(collabsArray) {
   try {
-    let endCursor = null
+    let endCursor = null;
     const query = /* GraphQL */ `
       query ($owner: String!, $cursorID: String) {
         organization(login: $owner) {
@@ -124,45 +133,43 @@ async function repoNames(collabsArray) {
           }
         }
       }
-    `
+    `;
 
-    let hasNextPage = false
+    let hasNextPage = false;
 
     do {
-      const dataJSON = await retryWithBackoff(() =>
-        octokit.graphql({
-          query,
-          owner: org,
-          cursorID: endCursor
-        })
-      )
+      const dataJSON = await retryWithBackoff(async () => {
+        const response = await octokit.graphql({ query, owner: org, cursorID: endCursor });
+        logRateLimit(response.headers); // Log rate limit info
+        return response;
+      });
 
-      const repos = dataJSON.organization.repositories.nodes.map((repo) => repo)
+      const repos = dataJSON.organization.repositories.nodes.map((repo) => repo);
 
-      hasNextPage = dataJSON.organization.repositories.pageInfo.hasNextPage
+      hasNextPage = dataJSON.organization.repositories.pageInfo.hasNextPage;
 
       for (const repo of repos) {
         if (hasNextPage) {
-          endCursor = dataJSON.organization.repositories.pageInfo.endCursor
+          endCursor = dataJSON.organization.repositories.pageInfo.endCursor;
         } else {
-          endCursor = null
+          endCursor = null;
         }
-        await collabRole(repo, collabsArray)
-        console.log(repo.name)
+        await collabRole(repo, collabsArray);
+        console.log(repo.name);
       }
 
       // Introduce a delay of 2 seconds between requests
-      await sleep(2000)
-    } while (hasNextPage)
+      await sleep(2000);
+    } while (hasNextPage);
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error.message);
   }
 }
 
 // Query all repository collaborators
 async function collabRole(repo, collabsArray) {
   try {
-    let endCursor = null
+    let endCursor = null;
     const query = /* GraphQL */ `
       query ($owner: String!, $id: ID!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
         organization(login: $owner) {
@@ -187,13 +194,13 @@ async function collabRole(repo, collabsArray) {
           }
         }
       }
-    `
+    `;
 
-    let hasNextPage = false
+    let hasNextPage = false;
 
     do {
-      const dataJSON = await retryWithBackoff(() =>
-        octokit.graphql({
+      const dataJSON = await retryWithBackoff(async () => {
+        const response = await octokit.graphql({
           query,
           owner: org,
           id: id,
@@ -201,31 +208,33 @@ async function collabRole(repo, collabsArray) {
           affil: affil,
           from: from,
           to: to,
-          cursorID: endCursor
-        })
-      )
+          cursorID: endCursor,
+        });
+        logRateLimit(response.headers); // Log rate limit info
+        return response;
+      });
 
-      const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role)
+      const roles = dataJSON.organization.repository.collaborators.edges.map((role) => role);
 
-      hasNextPage = dataJSON.organization.repository.collaborators.pageInfo.hasNextPage
+      hasNextPage = dataJSON.organization.repository.collaborators.pageInfo.hasNextPage;
 
       for (const role of roles) {
         if (hasNextPage) {
-          endCursor = dataJSON.organization.repository.collaborators.pageInfo.endCursor
+          endCursor = dataJSON.organization.repository.collaborators.pageInfo.endCursor;
         } else {
-          endCursor = null
+          endCursor = null;
         }
 
-        const login = role.node.login
-        const name = role.node.name || ''
+        const login = role.node.login;
+        const name = role.node.name || '';
         const verifiedEmail = role.node.organizationVerifiedDomainEmails
           ? role.node.organizationVerifiedDomainEmails.join(', ')
-          : ''
-        const createdAt = role.node.createdAt.slice(0, 10) || ''
-        const updatedAt = role.node.updatedAt.slice(0, 10) || ''
-        const permission = role.permission
-        const orgRepo = repo.name
-        const visibility = repo.visibility
+          : '';
+        const createdAt = role.node.createdAt.slice(0, 10) || '';
+        const updatedAt = role.node.updatedAt.slice(0, 10) || '';
+        const permission = role.permission;
+        const orgRepo = repo.name;
+        const visibility = repo.visibility;
 
         if (role.permission === rolePermission) {
           collabsArray.push({
@@ -237,8 +246,8 @@ async function collabRole(repo, collabsArray) {
             visibility,
             org,
             createdAt,
-            updatedAt
-          })
+            updatedAt,
+          });
         } else if (rolePermission === 'ALL') {
           collabsArray.push({
             orgRepo,
@@ -249,18 +258,19 @@ async function collabRole(repo, collabsArray) {
             visibility,
             org,
             createdAt,
-            updatedAt
-          })
+            updatedAt,
+          });
         }
       }
 
       // Introduce a delay of 2 seconds between requests
-      await sleep(2000)
-    } while (hasNextPage)
+      await sleep(2000);
+    } while (hasNextPage);
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error.message);
   }
 }
+
 
 // Check if the organization has SSO enabled
 async function ssoCheck(emailArray) {
@@ -421,7 +431,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
      // const publicEmail = collab.publicEmail
       const verifiedEmail = collab.verifiedEmail
       const permission = collab.permission
-      //const visibility = collab.visibility
+      const visibility = collab.visibility
       const org = collab.org
       const orgRepo = collab.orgRepo
       const createdAt = collab.createdAt
@@ -455,7 +465,6 @@ async function report(mergeArray) {
       name: 'Full name',
       ssoEmailValue: 'SSO email',
       verifiedEmail: 'Verified email',
-      //publicEmail: 'Public email',
       permission: 'Repo permission',
       memberValue: 'Organization role',
       // activeContrib: 'Active contributions',
