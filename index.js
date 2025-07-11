@@ -123,53 +123,39 @@ async function orgID() {
 // Query all organization repository names
 async function repoNames(collabsArray) {
   try {
-    let endCursor = null;
-    const query = /* GraphQL */ `
-      query ($owner: String!, $cursorID: String) {
-        organization(login: $owner) {
-          repositories(first: 20, after: $cursorID) { // Reduced page size to 20
-            nodes {
-              name
-              visibility
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
-        }
-      }
-    `;
+    let page = 1;
+    let perPage = 20;
+    let repos = true;
 
-    let hasNextPage = false;
+    while (morepages) [
+      const { data ] = await retryWithBackoff(
+        async () => {
+          const response = await oktokit.rest.repos.listForOrg({
+          org,
+          type: 'all', //can be changes to internal/private to reduce scope
+          per_page: perPage,
+          page: page,
+        }),
+        'repoNames'
+      );
 
-    do {
-      const dataJSON = await retryWithBackoff(async () => {
-        const response = await octokit.graphql({ query, owner: org, cursorID: endCursor });
-        logRateLimit(response.headers, 'repoNames'); // Log rate limit info
-        return response;
-        }, 'repoNames');
+    if (repos.length === 0) {
+      morePages = false;
+      break;
+    }
 
-      const repos = dataJSON.organization.repositories.nodes.map((repo) => repo);
-
-      hasNextPage = dataJSON.organization.repositories.pageInfo.hasNextPage;
-
-      for (const repo of repos) {
-        if (hasNextPage) {
-          endCursor = dataJSON.organization.repositories.pageInfo.endCursor;
-        } else {
-          endCursor = null;
-        }
-        await collabRole(repo, collabsArray);
-        console.log(repo.name);
-      }
-
-      // Introduce a delay of 2 seconds between requests
-      await sleep(2000);
-    } while (hasNextPage);
-  } catch (error) {
-    core.setFailed(error.message);
+  for (const repo of repos) {
+    core.info('Processing repo: ${repo.name}');
+    await sleep(5000);
+    await collabRole({ name: repo.name, visibility: repo.visibility }, collabsArray);
   }
+
+  page++;
+  await sleep(5000);
+  }
+} catch (error) {
+  core.setFailed)error.message);
+}
 }
 
 // Query all repository collaborators
@@ -177,7 +163,7 @@ async function collabRole(repo, collabsArray) {
   try {
     let endCursor = null;
     const query = /* GraphQL */ `
-      query ($owner: String!, $id: ID!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
+      query ($owner: String!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
         organization(login: $owner) {
           repository(name: $orgRepo) {
             collaborators(affiliation: $affil, first: 20, after: $cursorID) { // Reduced page size to 20
@@ -208,7 +194,6 @@ async function collabRole(repo, collabsArray) {
         const response = await octokit.graphql({
           query,
           owner: org,
-          id: id,
           orgRepo: repo.name,
           affil: affil,
           from: from,
@@ -236,7 +221,7 @@ async function collabRole(repo, collabsArray) {
           ? role.node.organizationVerifiedDomainEmails.join(', ')
           : '';
        // const createdAt = role.node.createdAt.slice(0, 10) || '';
-        const updatedAt = role.node.updatedAt.slice(0, 10) || '';
+        const updatedAt = role.node.updatedAt ? role.node.udatedAt.slice(0, 10) || '';
         const permission = role.permission;
         const orgRepo = repo.name;
         const visibility = repo.visibility;
@@ -267,7 +252,7 @@ async function collabRole(repo, collabsArray) {
       }
 
       // Introduce a delay of 2 seconds between requests
-      await sleep(2000);
+      await sleep(5000);
     } while (hasNextPage);
   } catch (error) {
     core.setFailed(error.message);
@@ -341,7 +326,6 @@ async function ssoEmail(emailArray) {
         logRateLimit(response.headers, 'ssoEmail'); // Log rate limit info
         return response;
     }, 'ssoEmail');
-      )
 
       const emails = dataJSON.organization.samlIdentityProvider.externalIdentities.edges
 
@@ -362,7 +346,7 @@ async function ssoEmail(emailArray) {
       }
 
       // Introduce a delay of 2 seconds between requests
-      await sleep(2000)
+      await sleep(5000)
     } while (hasNextPageMember)
   } catch (error) {
     core.setFailed(error.message)
@@ -400,7 +384,6 @@ async function membersWithRole(memberArray) {
         logRateLimit(response.headers, 'membersWithRole'); // Log rate limit info
         return response;
     }, 'membersWithRole');
-      )
 
       const members = dataJSON.organization.membersWithRole.edges
 
@@ -416,7 +399,7 @@ async function membersWithRole(memberArray) {
       }
 
       // Introduce a delay of 2 seconds between requests
-      await sleep(2000)
+      await sleep(5000)
     } while (hasNextPage)
   } catch (error) {
     core.setFailed(error.message)
