@@ -18,11 +18,11 @@ const committerName = core.getInput('committer-name', { required: false }) || 'g
 const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com';
 const jsonExport = core.getInput('json', { required: false }) || 'FALSE';
 const affil = core.getInput('affil', { required: false }) || 'ALL';
-const days = core.getInput('days', { required: false }) || '90';
+//const days = core.getInput('days', { required: false }) || '90';
 
-const to = new Date();
-const from = new Date();
-from.setDate(to.getDate() - days);
+//const to = new Date();
+//const from = new Date();
+//from.setDate(to.getDate() - days);
 
 let octokit = null;
 let id = [];
@@ -41,7 +41,13 @@ if (appId && privateKey && installationId) {
   octokit = github.getOctokit(token);
 }
 
-// Utility function to introduce a delay
+// Utility function to introduce a delay with jitter
+function randomJitter(base, jitter = 0.5) {
+  // jitter in ms: ±50% by default
+  const variation = base * jitter * (Math.random() - 0.5) * 2;
+  return base + variation;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -125,37 +131,45 @@ async function repoNames(collabsArray) {
   try {
     let page = 1;
     let perPage = 20;
-    let repos = true;
+    let morePages = true;
 
-    while (morepages) [
-      const { data ] = await retryWithBackoff(
+    while (morePages) {
+      const { data: repos } = await retryWithBackoff(
         async () => {
-          const response = await oktokit.rest.repos.listForOrg({
-          org,
-          type: 'all', //can be changes to internal/private to reduce scope
-          per_page: perPage,
-          page: page,
-        }),
+          const response = await octokit.rest.repos.listForOrg({
+            org,
+            type: 'all',
+            per_page: perPage,
+            page: page,
+          });
+          // Optionally, check headers for rate limit and sleep if needed
+          const sleepMs = getRateLimitSleep(response.headers);
+          if (sleepMs > 0) {
+            core.info(`Sleeping for ${sleepMs / 1000}s due to rate limit.`);
+            await sleep(sleepMs);
+          }
+          return response;
+        },
         'repoNames'
       );
 
-    if (repos.length === 0) {
-      morePages = false;
-      break;
+      if (repos.length === 0) {
+        morePages = false;
+        break;
+      }
+
+      for (const repo of repos) {
+        core.info(`Processing repo: ${repo.name}`);
+        await sleep(randomJitter(12000)); // 12s ±6s
+        await collabRole({ name: repo.name, visibility: repo.visibility }, collabsArray);
+      }
+
+      page++;
+      await sleep(randomJitter(10000)); // 10s ±5s jitter between pages
     }
-
-  for (const repo of repos) {
-    core.info('Processing repo: ${repo.name}');
-    await sleep(5000);
-    await collabRole({ name: repo.name, visibility: repo.visibility }, collabsArray);
+  } catch (error) {
+    core.setFailed(error.message);
   }
-
-  page++;
-  await sleep(5000);
-  }
-} catch (error) {
-  core.setFailed)error.message);
-}
 }
 
 // Query all repository collaborators
@@ -163,7 +177,7 @@ async function collabRole(repo, collabsArray) {
   try {
     let endCursor = null;
     const query = /* GraphQL */ `
-      query ($owner: String!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String, $from: DateTime, $to: DateTime) {
+      query ($owner: String!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String) {
         organization(login: $owner) {
           repository(name: $orgRepo) {
             collaborators(affiliation: $affil, first: 20, after: $cursorID) { // Reduced page size to 20
@@ -173,7 +187,6 @@ async function collabRole(repo, collabsArray) {
                   name
                   email
                   organizationVerifiedDomainEmails(login: $owner)
-                  updatedAt
                 }
                 permission
               }
@@ -196,8 +209,6 @@ async function collabRole(repo, collabsArray) {
           owner: org,
           orgRepo: repo.name,
           affil: affil,
-          from: from,
-          to: to,
           cursorID: endCursor,
         });
         logRateLimit(response.headers, 'collabRole'); // Log rate limit info
@@ -221,7 +232,7 @@ async function collabRole(repo, collabsArray) {
           ? role.node.organizationVerifiedDomainEmails.join(', ')
           : '';
        // const createdAt = role.node.createdAt.slice(0, 10) || '';
-        const updatedAt = role.node.updatedAt ? role.node.udatedAt.slice(0, 10) || '';
+      //  const updatedAt = role.node.updatedAt ? role.node.udatedAt.slice(0, 10) || '';
         const permission = role.permission;
         const orgRepo = repo.name;
         const visibility = repo.visibility;
@@ -235,7 +246,6 @@ async function collabRole(repo, collabsArray) {
             permission,
             visibility,
             org,
-            updatedAt,
           });
         } else if (rolePermission === 'ALL') {
           collabsArray.push({
@@ -246,13 +256,12 @@ async function collabRole(repo, collabsArray) {
             permission,
             visibility,
             org,
-            updatedAt,
           });
         }
       }
 
       // Introduce a delay of 2 seconds between requests
-      await sleep(5000);
+      await sleep(randomJitter(10000));
     } while (hasNextPage);
   } catch (error) {
     core.setFailed(error.message);
@@ -419,7 +428,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const org = collab.org
       const orgRepo = collab.orgRepo
       //const createdAt = collab.createdAt
-      const updatedAt = collab.updatedAt
+      //const updatedAt = collab.updatedAt
       //const activeContrib = collab.activeContrib
       //const sumContrib = collab.sumContrib
 
@@ -429,7 +438,7 @@ async function mergeArrays(collabsArray, emailArray, mergeArray, memberArray) {
       const member = memberArray.find((member) => member.login === login)
       const memberValue = member ? member.role : 'OUTSIDE COLLABORATOR'
 
-      ssoCollab = { orgRepo, login, name, ssoEmailValue, verifiedEmail, permission, org, updatedAt, memberValue }
+      ssoCollab = { orgRepo, login, name, ssoEmailValue, verifiedEmail, permission, org, memberValue }
 
       mergeArray.push(ssoCollab)
     })
@@ -454,7 +463,7 @@ async function report(mergeArray) {
       // activeContrib: 'Active contributions',
       // sumContrib: 'Total contributions',
       //createdAt: 'User created',
-      updatedAt: 'User updated',
+      //updatedAt: 'User updated',
       org: 'Organization'
     }
 
