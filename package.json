@@ -1,6 +1,6 @@
-{ 
-"name": "github-org-repo-collaborator-action",
-  "version": "2.0.0",
+{
+  "name": "github-org-repo-collaborator-action",
+  "version": "2.0.1",
   "description": "A GitHub Action to generate a report which contains repository collaborator details for a GitHub organization.",
   "author": {
     "name": "GitHub Expert Services",
@@ -15,10 +15,10 @@
     }
   ],
   "main": "index.js",
-  "repository": "github:JHAAdmins/github-org-repo-collaborator-action",
+  "repository": "github:nicklegan/github-org-repo-collaborator-action",
   "engines": {
-    "node": ">=16",
-    "npm": ">=7"
+    "node": ">=20",
+    "npm": ">=10"
   },
   "license": "MIT",
   "scripts": {
@@ -30,7 +30,6 @@
     "@octokit/auth-app": "^7.1.1",
     "@octokit/plugin-throttling": "^9.4.0",
     "array-sort": "^1.0.0",
-    "csv": "^6.3.8"
+    "csv": "^6.3.11"
   }
 }
-
