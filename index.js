@@ -62,23 +62,53 @@ function logRateLimit(headers, location) {
   }
 }
 
+// Helper to log GraphQL rate limit info
+async function logGraphqlRateLimit(octokit, location) {
+  try {
+    const query = `
+      {
+        rateLimit {
+          limit
+          cost
+          remaining
+          resetAt
+        }
+      }
+    `;
+    const result = await octokit.graphql(query);
+    core.info(`[${location}] GraphQL Rate Limit: ${JSON.stringify(result.rateLimit)}`);
+  } catch (err) {
+    core.warning(`[${location}] Failed to fetch GraphQL rate limit info: ${err.message}`);
+  }
+}
+
 // Retry function with exponential backoff
 async function retryWithBackoff(fn, location, retries = 5, delay = 2000) {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (error) {
+      // Robust error logging
+      core.error(`[${location}] Attempt ${i + 1} failed: ${error.message}`);
       if (error.response && error.response.headers) {
-        logRateLimit(error.response.headers, location); // Log rate limit info
+        logRateLimit(error.response.headers, location); // REST
+      } else if (error.response && error.response.data) {
+        core.error(`[${location}] Error data: ${JSON.stringify(error.response.data)}`);
+      } else {
+        core.error(`[${location}] Error details: ${error.stack || JSON.stringify(error)}`);
       }
 
-      if (i === retries - 1 || !error.message.includes('secondary rate limit')) {
-        core.error(`[${location}] Error: ${error.message}`);
+      // Fetch and log GraphQL rate limit if no headers
+      if (!error.response || !error.response.headers) {
+        await logGraphqlRateLimit(octokit, location);
+      }
+
+      if (i === retries - 1 || !(error.message && error.message.includes('secondary rate limit'))) {
         throw error;
       }
 
       core.warning(`[${location}] Secondary rate limit hit. Retrying in ${delay * Math.pow(2, i)}ms...`);
-      await sleep(delay * Math.pow(2, i)); // Exponential backoff
+      await sleep(delay * Math.pow(2, i));
     }
   }
 }
