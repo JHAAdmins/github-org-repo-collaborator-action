@@ -160,7 +160,7 @@ async function orgID() {
 async function repoNames(collabsArray) {
   try {
     let page = 1;
-    let perPage = 20;
+    let perPage = 100;
     let morePages = true;
 
     while (morePages) {
@@ -210,7 +210,7 @@ async function collabRole(repo, collabsArray) {
       query ($owner: String!, $orgRepo: String!, $affil: CollaboratorAffiliation, $cursorID: String) {
         organization(login: $owner) {
           repository(name: $orgRepo) {
-            collaborators(affiliation: $affil, first: 20, after: $cursorID) { // Reduced page size to 20
+            collaborators(affiliation: $affil, first: 100, after: $cursorID) { // Reduced page size to 100
               edges {
                 node {
                   login
