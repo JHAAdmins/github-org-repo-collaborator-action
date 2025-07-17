@@ -34,8 +34,8 @@ param(
     [Parameter(Mandatory=$true)][string]$Org,
     [string]$Permission = "ADMIN",
     [string]$Affil = "ALL",
-    [string]$CSVPath = "./reports/$Org-collaborators.csv",
-    [string]$JSONPath = "",
+    [string]$CSVPath = "./reports/$Org-$Permission.csv",
+    [string]$JSONPath = "./reports/$Org-$Permission.json",
     [int]$RetryCount = 5,
     [int]$Delay = 2000
 )
@@ -328,7 +328,7 @@ foreach ($repo in $repos) {
                     publicEmail = $publicEmail
                     permission = $matchedPermission
                     org = $Org
-                    memberValue = $memberValue
+                    orgpermission = $memberValue
                 }
             }
         }
