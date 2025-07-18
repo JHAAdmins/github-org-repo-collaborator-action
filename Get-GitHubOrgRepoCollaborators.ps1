@@ -154,9 +154,12 @@ query SSOProvider($org: String!) {
 }
 '@
     try {
+        Write-Log "Executing SSO Query..."
         $ssoData = Invoke-GitHubGraphQL -Query $ssoQuery -Variables @{ org = $Org }
+        Write-Log "SSO Query Response: $($ssoData | ConvertTo-Json -Depth 10)"
     } catch {
         $errMsg = $_.Exception.Message
+        Write-ErrorLog "SSO Query Error: $errMsg"
         if ($errMsg -like "*SAML identity provider is disabled when an Enterprise SAML identity provider is available*" -or
             $errMsg -like "*FORBIDDEN*") {
             Write-Log "Enterprise SAML detected; SSO/SAML email extraction is not available via GitHub API."
@@ -169,6 +172,7 @@ query SSOProvider($org: String!) {
         Write-Log "Organization does not have SAML SSO enabled or token lacks permission."
         return @()
     }
+
     Write-Log "Fetching SSO emails for $Org ..."
     $ssoEmailQuery = @'
 query SSOEmails($org: String!, $cursor: String) {
@@ -191,7 +195,9 @@ query SSOEmails($org: String!, $cursor: String) {
     $endCursor = $null
     do {
         $qvars = @{ org = $Org; cursor = $endCursor }
+        Write-Log "SSO Email Query Variables: $($qvars | ConvertTo-Json -Depth 10)"
         $result = Invoke-GitHubGraphQL -Query $ssoEmailQuery -Variables $qvars
+        Write-Log "SSO Email Query Response: $($result | ConvertTo-Json -Depth 10)"
         if (-not $result.organization.samlIdentityProvider) { break }
         $edges = $result.organization.samlIdentityProvider.externalIdentities.edges
         foreach ($edge in $edges) {
@@ -203,6 +209,7 @@ query SSOEmails($org: String!, $cursor: String) {
             }
         }
         $pi = $result.organization.samlIdentityProvider.externalIdentities.pageInfo
+        Write-Log "Pagination Info: hasNextPage=$($pi.hasNextPage), endCursor=$($pi.endCursor)"
         $endCursor = $pi.endCursor
     } while ($pi.hasNextPage)
     Write-Log "Fetched $($emailArray.Count) SSO emails."
