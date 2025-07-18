@@ -26,8 +26,11 @@
 .PARAMETER Delay
     Initial delay (ms) for retry backoff. Default: 2000.
 
+.PARAMETER FetchNames
+    If set, fetch each user's "name" from their profile if not present in the collaborator API response.
+
 .EXAMPLE
-    .\Get-GitHubOrgRepoCollaborators.ps1 -Token 'ghp_...' -Org 'octo-org' -Permission "WRITE"
+    .\Get-GitHubOrgRepoCollaborators.ps1 -Token 'ghp_...' -Org 'octo-org' -FetchNames
 #>
 param(
     [Parameter(Mandatory=$true)][string]$Token,
@@ -37,7 +40,8 @@ param(
     [string]$CSVPath = "./reports/$Org-$Permission.csv",
     [string]$JSONPath = "./reports/$Org-$Permission.json",
     [int]$RetryCount = 5,
-    [int]$Delay = 2000
+    [int]$Delay = 2000,
+    [switch]$FetchNames
 )
 
 function Write-Log { param($msg) Write-Host "[$((Get-Date).ToString('s'))] $msg" }
@@ -175,6 +179,13 @@ function Invoke-GitHubGraphQL {
         }
     }
     return $null
+}
+
+function Get-GitHubUserName {
+    param([string]$Username)
+    $uri = "https://api.github.com/users/$Username"
+    $resp = Invoke-GitHubREST -Uri $uri
+    return $resp.name
 }
 
 # --- SSO Email Extraction Function ---
@@ -335,7 +346,13 @@ foreach ($repo in $repos) {
     if ($collabs) {
         foreach ($collab in $collabs) {
             $login = $collab.login
+
+            # Optional name fetch logic
             $name = $collab.name
+            if ($FetchNames -and ([string]::IsNullOrWhiteSpace($name))) {
+                $name = Get-GitHubUserName $login
+                Start-Sleep -Milliseconds 100 # To avoid rate limit
+            }
 
             # Determine permission for output
             $permissions = $collab.permissions
