@@ -53,6 +53,27 @@ function Merge-Headers {
     return $merged
 }
 
+function Log-RateLimitHeaders {
+    param($Headers, [string]$ApiType)
+    if ($Headers) {
+        $limit = $Headers["X-RateLimit-Limit"]
+        $remaining = $Headers["X-RateLimit-Remaining"]
+        $reset = $Headers["X-RateLimit-Reset"]
+        $retry = $Headers["Retry-After"]
+        $secondary = $Headers["X-RateLimit-Secondary-Remaining"]
+
+        if ($limit -or $remaining -or $reset) {
+            Write-Log "$ApiType Rate Limit: limit=$limit, remaining=$remaining, reset=$reset"
+        }
+        if ($retry) {
+            Write-Log "$ApiType Secondary Rate Limit: Retry-After=$retry seconds"
+        }
+        if ($secondary) {
+            Write-Log "$ApiType Secondary Rate Limit: secondary remaining=$secondary"
+        }
+    }
+}
+
 function Get-RateLimit {
     $uri = "https://api.github.com/rate_limit"
     $headers = @{
@@ -61,11 +82,16 @@ function Get-RateLimit {
         "User-Agent"  = "PowerShell-GitHub-Action"
     }
     try {
-        $resp = Invoke-RestMethod -Uri $uri -Headers $headers
-        $remaining = $resp.resources.core.remaining
-        $reset = $resp.resources.core.reset
+        $resp = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing
+        Log-RateLimitHeaders $resp.Headers "REST"
+        $content = $resp.Content | ConvertFrom-Json
+        $remaining = $content.resources.core.remaining
+        $reset = $content.resources.core.reset
         return @{ remaining = $remaining; reset = $reset }
     } catch {
+        if ($_.Exception.Response) {
+            Log-RateLimitHeaders $_.Exception.Response.Headers "REST"
+        }
         Write-ErrorLog "Could not get rate limit info: $($_.Exception.Message)"
         return @{ remaining = 0; reset = [int][DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 60 }
     }
@@ -98,9 +124,16 @@ function Invoke-GitHubREST {
     for ($i=0; $i -lt $RetryCount; $i++) {
         Wait-IfRateLimited
         try {
-            $resp = Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method
-            return $resp
+            $resp = Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -UseBasicParsing
+            Log-RateLimitHeaders $resp.Headers "REST"
+            if ($resp.Content) {
+                return $resp.Content | ConvertFrom-Json
+            }
+            return $null
         } catch {
+            if ($_.Exception.Response) {
+                Log-RateLimitHeaders $_.Exception.Response.Headers "REST"
+            }
             Write-ErrorLog "$($_.Exception.Message) (attempt $($i+1))"
             if ($i -eq $RetryCount-1) { throw }
             Start-Sleep -Milliseconds ($Delay * [math]::Pow(2,$i))
@@ -127,10 +160,15 @@ function Invoke-GitHubGraphQL {
     for ($i=0; $i -lt $RetryCount; $i++) {
         Wait-IfRateLimited
         try {
-            $respObj = Invoke-RestMethod -Uri "https://api.github.com/graphql" -Method POST -Headers $headers -Body $jsonBody -ContentType "application/json"
+            $webResp = Invoke-WebRequest -Uri "https://api.github.com/graphql" -Method POST -Headers $headers -Body $jsonBody -ContentType "application/json" -UseBasicParsing
+            Log-RateLimitHeaders $webResp.Headers "GraphQL"
+            $respObj = $webResp.Content | ConvertFrom-Json
             if ($respObj.errors) { throw ($respObj.errors | ConvertTo-Json) }
             return $respObj.data
         } catch {
+            if ($_.Exception.Response) {
+                Log-RateLimitHeaders $_.Exception.Response.Headers "GraphQL"
+            }
             Write-ErrorLog "GraphQL: $($_.Exception.Message) (attempt $($i+1))"
             if ($i -eq $RetryCount-1) { throw }
             Start-Sleep -Milliseconds ($Delay * [math]::Pow(2,$i))
