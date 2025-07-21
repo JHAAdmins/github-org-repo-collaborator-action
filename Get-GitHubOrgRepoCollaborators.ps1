@@ -209,6 +209,7 @@ query SSOProvider($Org: String!) {
 }
 '@
     try {
+        Write-Log "Org parameter value: '$Org'"
         Write-Log "Executing SSO Query..."
         $ssoData = Invoke-GitHubGraphQL -Query $ssoQuery -Variables @{ org = $Org }
         Write-Log "SSO Query Response: $($ssoData | ConvertTo-Json -Depth 10)"
@@ -288,6 +289,7 @@ query($Org: String!, $login: String!) {
 }
 '@
         try {
+            Write-Log "Org parameter value: '$Org'"
             $data = Invoke-GitHubGraphQL -Query $query -Variables @{ org = $Org; login = $login }
             $emails = $data.user.organizationVerifiedDomainEmails
             if ($emails) {
@@ -351,6 +353,7 @@ Write-Log "$($repos.Count) repositories found."
 # 3. Get SSO/SAML emails (GraphQL)
 $emailArray = @()
 try {
+    Write-Log "Org parameter value: '$Org'"
     $emailArray = Get-GitHubOrgSSOEmails -Token $Token -Org $Org
 } catch {
     $errMsg = $_.Exception.Message
