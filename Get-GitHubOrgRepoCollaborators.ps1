@@ -44,6 +44,8 @@ param(
     [switch]$FetchNames
 )
 
+Write-Log "========== Script started =========="
+Write-Log "Step 0: Parameters received."
 Write-Host "DEBUG: Org parameter received: '$Org'"  
 
 function Write-Log { param($msg) Write-Host "[$((Get-Date).ToString('s'))] $msg" }
@@ -130,6 +132,7 @@ function Invoke-GitHubREST {
     for ($i=0; $i -lt $RetryCount; $i++) {
         Wait-IfRateLimited
         try {
+            Write-Log "REST API Call: $Method $Uri (attempt $($i+1))"
             $resp = Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -UseBasicParsing
             Log-RateLimitHeaders $resp.Headers "REST"
             if ($resp.Content) {
@@ -166,6 +169,7 @@ function Invoke-GitHubGraphQL {
     for ($i=0; $i -lt $RetryCount; $i++) {
         Wait-IfRateLimited
         try {
+            Write-Log "GraphQL API Call (attempt $($i+1)), Query: $($Query.Substring(0, 40))..."
             $webResp = Invoke-WebRequest -Uri "https://api.github.com/graphql" -Method POST -Headers $headers -Body $jsonBody -ContentType "application/json" -UseBasicParsing
             Log-RateLimitHeaders $webResp.Headers "GraphQL"
             $respObj = $webResp.Content | ConvertFrom-Json
@@ -185,6 +189,7 @@ function Invoke-GitHubGraphQL {
 
 function Get-GitHubUserName {
     param([string]$Username)
+    Write-Log "Fetching public profile name for user: $Username"
     $uri = "https://api.github.com/users/$Username"
     $resp = Invoke-GitHubREST -Uri $uri
     return $resp.name
@@ -192,6 +197,7 @@ function Get-GitHubUserName {
 
 function Get-GitHubUserPublicEmail {
     param([string]$Login)
+    Write-Log "Fetching public email for user: $Login"
     $uri = "https://api.github.com/users/$Login"
     $resp = Invoke-GitHubREST -Uri $uri
     return $resp.email
@@ -202,7 +208,7 @@ function Get-GitHubOrgSSOEmails {
         [string]$Token,
         [string]$Org
     )
-    Write-Log "Checking for SSO/SAML provider ..."
+    Write-Log "Step 3: Checking for SSO/SAML provider ..."
     $ssoQuery = @'
 query SSOProvider($Org: String!) {
   organization(login: $Org) {
@@ -280,7 +286,7 @@ function Get-GitHubOrgVerifiedEmails {
         [string]$Org,
         [string[]]$Logins
     )
-    Write-Log "Fetching organization-verified emails for users..."
+    Write-Log "Step 10: Fetching organization-verified emails for users..."
     $results = @()
     foreach ($login in $Logins) {
         $query = @'
@@ -291,7 +297,7 @@ query($Org: String!, $login: String!) {
 }
 '@
         try {
-            Write-Log "Org parameter value: '$Org'"
+            Write-Log "Org parameter value: '$Org', login: '$login'"
             $data = Invoke-GitHubGraphQL -Query $query -Variables @{ Org = $Org; login = $login }
             $emails = $data.user.organizationVerifiedDomainEmails
             if ($emails) {
@@ -330,7 +336,7 @@ $permKey = $Permission.ToLower()
 $apiPermKey = $permissionMap[$permKey]
 
 # 1. Get org ID (GraphQL)
-Write-Log "Getting org ID for $Org ..."
+Write-Log "Step 1: Getting org ID for $Org ..."
 $orgIdQuery = @'
 query OrgId($Org: String!) {
   organization(login: $Org) { id }
@@ -339,23 +345,25 @@ query OrgId($Org: String!) {
 $orgIdData = Invoke-GitHubGraphQL -Query $orgIdQuery -Variables @{ Org = $Org }
 $orgId = $orgIdData.organization.id
 if (-not $orgId) { throw "Could not get org ID for $Org" }
+Write-Log "Step 1: Org ID = $orgId"
 
 # 2. Get all repositories in org (REST, paginated)
-Write-Log "Listing repositories in org $Org ..."
+Write-Log "Step 2: Listing repositories in org $Org ..."
 $repos = @()
 $page = 1
 do {
+    Write-Log "Fetching repo page $page ..."
     $uri = "https://api.github.com/orgs/$Org/repos?type=all&per_page=100&page=$page"
     $resp = Invoke-GitHubREST -Uri $uri
     if ($resp) { $repos += $resp }
     $page++
 } while ($resp.Count -eq 100)
-Write-Log "$($repos.Count) repositories found."
+Write-Log "Step 2: $($repos.Count) repositories found."
 
 # 3. Get SSO/SAML emails (GraphQL)
 $emailArray = @()
 try {
-    Write-Log "Org parameter value: '$Org'"
+    Write-Log "Step 3: Getting SSO/SAML emails for $Org ..."
     $emailArray = Get-GitHubOrgSSOEmails -Token $Token -Org $Org
 } catch {
     $errMsg = $_.Exception.Message
@@ -367,12 +375,14 @@ try {
         throw
     }
 }
+Write-Log "Step 3: SSO/SAML emails fetched: $($emailArray.Count)"
 
 # 4. Get all org members with role (GraphQL)
-Write-Log "Fetching org members with role ..."
+Write-Log "Step 4: Fetching org members with role ..."
 $memberArray = @()
 $endCursor = $null
 do {
+    Write-Log "Fetching org member page with cursor '$endCursor' ..."
     $membersQuery = @'
 query MembersWithRole($Org: String!, $cursor: String) {
   organization(login: $Org) {
@@ -398,29 +408,33 @@ query MembersWithRole($Org: String!, $cursor: String) {
     $pi = $membersData.organization.membersWithRole.pageInfo
     $endCursor = $pi.endCursor
 } while ($pi.hasNextPage)
-Write-Log "Fetched $($memberArray.Count) org members with role."
+Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
 
 # 5. Get all teams in org (REST)
-Write-Log "Fetching teams in org ..."
+Write-Log "Step 5: Fetching teams in org ..."
 $teams = @()
 $page = 1
 do {
+    Write-Log "Fetching teams page $page ..."
     $uri = "https://api.github.com/orgs/$Org/teams?per_page=100&page=$page"
     $resp = Invoke-GitHubREST -Uri $uri
     if ($resp) { $teams += $resp }
     $page++
 } while ($resp.Count -eq 100)
-Write-Log "$($teams.Count) teams found."
+Write-Log "Step 5: $($teams.Count) teams found."
 
 # 6. Build team-repo-permission map and team-member map
+Write-Log "Step 6: Building team-repo-permission and team-member map ..."
 $teamRepoPerms = @()
 $teamMembers = @()
 foreach ($team in $teams) {
     $teamSlug = $team.slug
+    Write-Log "Processing team: $teamSlug"
 
     # Get all repos for team and their permissions
     $pageTR = 1
     do {
+        Write-Log "Fetching team repos (team: $teamSlug, page: $pageTR) ..."
         $uri = "https://api.github.com/orgs/$Org/teams/$teamSlug/repos?per_page=100&page=$pageTR"
         $resp = Invoke-GitHubREST -Uri $uri
         if ($resp) {
@@ -438,6 +452,7 @@ foreach ($team in $teams) {
     # Get all members for team
     $pageTM = 1
     do {
+        Write-Log "Fetching team members (team: $teamSlug, page: $pageTM) ..."
         $uri = "https://api.github.com/orgs/$Org/teams/$teamSlug/members?per_page=100&page=$pageTM"
         $resp = Invoke-GitHubREST -Uri $uri
         if ($resp) {
@@ -451,8 +466,10 @@ foreach ($team in $teams) {
         $pageTM++
     } while ($resp.Count -eq 100)
 }
+Write-Log "Step 6: Team-repo-permission map and team-member map built."
 
 # 7. Build team-user-repo-permission mapping (effective permissions for team memberships)
+Write-Log "Step 7: Building team-user-repo-permission mapping ..."
 $teamUserRepoPerms = @()
 foreach ($trp in $teamRepoPerms) {
     $repoName = $trp.repo
@@ -476,9 +493,10 @@ foreach ($trp in $teamRepoPerms) {
         }
     }
 }
+Write-Log "Step 7: Team-user-repo-permission mapping built."
 
 # 8. For each repo, get direct collaborators (REST), filter by permission type
-Write-Log "Processing repo collaborators..."
+Write-Log "Step 8: Processing repo collaborators..."
 $collabsArray = @()
 foreach ($repo in $repos) {
     Write-Log "Repo: $($repo.name)"
@@ -526,8 +544,10 @@ foreach ($repo in $repos) {
     }
     Start-Sleep -Seconds 2 # Longer sleep to respect rate limits
 }
+Write-Log "Step 8: Repo collaborators processed."
 
 # 9. Combine/merge both direct and team-based permissions, deduplicate by highest permission
+Write-Log "Step 9: Combining and deduplicating collaborator and team permissions ..."
 $allRows = @()
 $rowsByKey = @{}
 
@@ -558,18 +578,19 @@ foreach ($t in $teamUserRepoPerms) {
 }
 
 $allRows = $rowsByKey.Values
+Write-Log "Step 9: Combination and deduplication complete. Total rows: $($allRows.Count)"
 
 # 10. Fetch public, verified, and SSO emails for all unique logins
+Write-Log "Step 10: Fetching public emails for all unique logins..."
 $uniqueLogins = $allRows | Select-Object -ExpandProperty login -Unique
 
-Write-Log "Fetching public emails for all unique logins..."
 $publicEmails = @{}
 foreach ($login in $uniqueLogins) {
     $pubEmail = Get-GitHubUserPublicEmail $login
     $publicEmails[$login] = $pubEmail
     Start-Sleep -Milliseconds 100
 }
-Write-Log "Fetched $($publicEmails.Count) public emails."
+Write-Log "Step 10: Fetched $($publicEmails.Count) public emails."
 
 $verifiedEmails = Get-GitHubOrgVerifiedEmails -Token $Token -Org $Org -Logins $uniqueLogins
 $verifiedEmailsHash = @{}
@@ -579,6 +600,7 @@ $ssoEmailsHash = @{}
 foreach ($s in $emailArray) { $ssoEmailsHash[$s.login] = $s.ssoEmail }
 
 # 11. Merge all three email types into each row
+Write-Log "Step 11: Merging email addresses into each row ..."
 foreach ($row in $allRows) {
     $row.publicEmail    = $publicEmails[$row.login]
     $row.verifiedEmail  = $verifiedEmailsHash[$row.login]
@@ -591,19 +613,22 @@ foreach ($row in $allRows) {
         $row.orgpermission = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
     }
 }
+Write-Log "Step 11: Email merging complete."
 
 # 12. Filter by permission if not ALL
+Write-Log "Step 12: Filtering by permission ($Permission) ..."
 if ($Permission -ne "ALL") {
     $allRows = $allRows | Where-Object { $_.permission -eq $permKey }
 }
+Write-Log "Step 12: Filtering complete. Rows remaining: $($allRows.Count)"
 
 # 13. Sort and export
-Write-Log "Exporting CSV to $CSVPath ..."
+Write-Log "Step 13: Exporting CSV to $CSVPath ..."
 $allRows | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
 if ($JSONPath) {
-    Write-Log "Exporting JSON to $JSONPath ..."
+    Write-Log "Step 13: Exporting JSON to $JSONPath ..."
     $allRows | Sort-Object orgRepo | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
 }
 
-Write-Log "Done. $($allRows.Count) rows exported."
+Write-Log "========== Done. $($allRows.Count) rows exported. =========="
