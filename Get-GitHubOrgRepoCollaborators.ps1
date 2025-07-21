@@ -202,8 +202,8 @@ function Get-GitHubOrgSSOEmails {
     )
     Write-Log "Checking for SSO/SAML provider ..."
     $ssoQuery = @'
-query SSOProvider($org: String!) {
-  organization(login: $org) {
+query SSOProvider($Org: String!) {
+  organization(login: $Org) {
     samlIdentityProvider { id }
   }
 }
@@ -230,8 +230,8 @@ query SSOProvider($org: String!) {
 
     Write-Log "Fetching SSO emails for $Org ..."
     $ssoEmailQuery = @'
-query SSOEmails($org: String!, $cursor: String) {
-  organization(login: $org) {
+query SSOEmails($Org: String!, $cursor: String) {
+  organization(login: $Org) {
     samlIdentityProvider {
       externalIdentities(first: 50, after: $cursor) {
         edges {
@@ -328,8 +328,8 @@ $apiPermKey = $permissionMap[$permKey]
 # 1. Get org ID (GraphQL)
 Write-Log "Getting org ID for $Org ..."
 $orgIdQuery = @'
-query OrgId($org: String!) {
-  organization(login: $org) { id }
+query OrgId($Org: String!) {
+  organization(login: $Org) { id }
 }
 '@
 $orgIdData = Invoke-GitHubGraphQL -Query $orgIdQuery -Variables @{ org = $Org }
@@ -369,8 +369,8 @@ $memberArray = @()
 $endCursor = $null
 do {
     $membersQuery = @'
-query MembersWithRole($org: String!, $cursor: String) {
-  organization(login: $org) {
+query MembersWithRole($Org: String!, $cursor: String) {
+  organization(login: $Org) {
     membersWithRole(first: 50, after: $cursor) {
       edges {
         node { login }
