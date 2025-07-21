@@ -35,7 +35,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Token,
     [Parameter(Mandatory=$true)][string]$Org,
-    [string]$Permission = "ALL",
+    [Parameter(Mandatory=$true)][string]$Permission,
     [string]$Affil = "ALL",
     [string]$CSVPath = "./reports/$Org-$Permission.csv",
     [string]$JSONPath = "./reports/$Org-$Permission.json",
