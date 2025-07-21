@@ -188,6 +188,26 @@ function Get-GitHubUserName {
     return $resp.name
 }
 
+# Reusable canonical permission mapper
+function Get-CanonicalPermission {
+    param(
+        $Permissions
+    )
+    $permissionOrder = @(
+        @{ key = "admin";    name = "ADMIN" }
+        @{ key = "maintain"; name = "MAINTAIN" }
+        @{ key = "write";    name = "WRITE" }
+        @{ key = "triage";   name = "TRIAGE" }
+        @{ key = "read";     name = "READ" }
+    )
+    foreach ($perm in $permissionOrder) {
+        if ($Permissions.$($perm.key)) {
+            return $perm.name
+        }
+    }
+    return ""
+}
+
 # --- SSO Email Extraction Function ---
 function Get-GitHubOrgSSOEmails {
     param(
@@ -335,10 +355,9 @@ query($org: String!, $cursor: String) {
 } while ($pi.hasNextPage)
 Write-Log "Fetched $($memberArray.Count) org members with role."
 
-# 5. For each repo, get collaborators (REST), filter by permission type
+# 5. For each repo, get collaborators (REST), filter by canonical permission type
 Write-Log "Processing repo collaborators..."
 $collabsArray = @()
-$permKey = $Permission.ToLower()
 foreach ($repo in $repos) {
     Write-Log "Repo: $($repo.name)"
     $collabUri = "https://api.github.com/repos/$Org/$($repo.name)/collaborators?affiliation=$Affil&per_page=100"
@@ -354,20 +373,11 @@ foreach ($repo in $repos) {
                 Start-Sleep -Milliseconds 100 # To avoid rate limit
             }
 
-            # Determine permission for output
+            # Canonical permission mapping
             $permissions = $collab.permissions
-            $matchedPermission = ""
-            if ($Permission -eq "ALL") {
-                foreach ($key in $permissions.PSObject.Properties) {
-                    if ($key.Value) {
-                        $matchedPermission = $key.Name
-                        break
-                    }
-                }
-            } else {
-                if ($permissions.$permKey) {
-                    $matchedPermission = $permKey
-                }
+            $matchedPermission = Get-CanonicalPermission $permissions
+            if ($Permission -ne "ALL" -and $matchedPermission -ne $Permission) {
+                continue
             }
 
             if ($matchedPermission) {
