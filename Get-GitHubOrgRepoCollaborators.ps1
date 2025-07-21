@@ -280,13 +280,13 @@ function Get-GitHubOrgVerifiedEmails {
     Write-Log "Fetching organization-verified emails for users..."
     $results = @()
     foreach ($login in $Logins) {
-        $query = @"
+        $query = @'
 query($org: String!, $login: String!) {
   user(login: $login) {
     organizationVerifiedDomainEmails(login: $org)
   }
 }
-"@
+'@
         try {
             $data = Invoke-GitHubGraphQL -Query $query -Variables @{ org = $Org; login = $login }
             $emails = $data.user.organizationVerifiedDomainEmails
