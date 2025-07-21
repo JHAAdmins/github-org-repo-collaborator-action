@@ -213,7 +213,7 @@ query SSOProvider($Org: String!) {
     try {
         Write-Log "Org parameter value: '$Org'"
         Write-Log "Executing SSO Query..."
-        $ssoData = Invoke-GitHubGraphQL -Query $ssoQuery -Variables @{ org = $Org }
+        $ssoData = Invoke-GitHubGraphQL -Query $ssoQuery -Variables @{ Org = $Org }
         Write-Log "SSO Query Response: $($ssoData | ConvertTo-Json -Depth 10)"
     } catch {
         $errMsg = $_.Exception.Message
@@ -252,7 +252,7 @@ query SSOEmails($Org: String!, $cursor: String) {
     $emailArray = @()
     $endCursor = $null
     do {
-        $qvars = @{ org = $Org; cursor = $endCursor }
+        $qvars = @{ Org = $Org; cursor = $endCursor }
         Write-Log "SSO Email Query Variables: $($qvars | ConvertTo-Json -Depth 10)"
         $result = Invoke-GitHubGraphQL -Query $ssoEmailQuery -Variables $qvars
         Write-Log "SSO Email Query Response: $($result | ConvertTo-Json -Depth 10)"
@@ -292,7 +292,7 @@ query($Org: String!, $login: String!) {
 '@
         try {
             Write-Log "Org parameter value: '$Org'"
-            $data = Invoke-GitHubGraphQL -Query $query -Variables @{ org = $Org; login = $login }
+            $data = Invoke-GitHubGraphQL -Query $query -Variables @{ Org = $Org; login = $login }
             $emails = $data.user.organizationVerifiedDomainEmails
             if ($emails) {
                 $results += [PSCustomObject]@{
@@ -336,7 +336,7 @@ query OrgId($Org: String!) {
   organization(login: $Org) { id }
 }
 '@
-$orgIdData = Invoke-GitHubGraphQL -Query $orgIdQuery -Variables @{ org = $Org }
+$orgIdData = Invoke-GitHubGraphQL -Query $orgIdQuery -Variables @{ Org = $Org }
 $orgId = $orgIdData.organization.id
 if (-not $orgId) { throw "Could not get org ID for $Org" }
 
@@ -386,7 +386,7 @@ query MembersWithRole($Org: String!, $cursor: String) {
   }
 }
 '@
-    $qvars = @{ org = $Org; cursor = $endCursor }
+    $qvars = @{ Org = $Org; cursor = $endCursor }
     $membersData = Invoke-GitHubGraphQL -Query $membersQuery -Variables $qvars
     $edges = $membersData.organization.membersWithRole.edges
     foreach ($edge in $edges) {
