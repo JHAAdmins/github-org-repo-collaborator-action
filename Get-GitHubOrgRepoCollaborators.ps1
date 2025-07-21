@@ -281,9 +281,9 @@ function Get-GitHubOrgVerifiedEmails {
     $results = @()
     foreach ($login in $Logins) {
         $query = @'
-query($org: String!, $login: String!) {
-  user(login: $login) {
-    organizationVerifiedDomainEmails(login: $org)
+query('$org: String!, '$login: String!) {
+  user(login: '$login) {
+    organizationVerifiedDomainEmails(login: '$org)
   }
 }
 '@
