@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    PowerShell script to export all GitHub organization repository collaborators and their SSO/verified emails.
+    Export all GitHub organization repository collaborators, including SSO, verified org domain, and public profile emails, as well as team-based permissions.
 
 .PARAMETER Token
     GitHub Personal Access Token (or GitHub App installation token).
@@ -9,7 +9,7 @@
     GitHub organization name.
 
 .PARAMETER Permission
-    Filter by permission (ADMIN, MAINTAIN, WRITE, TRIAGE, READ, ALL). Default: ADMIN.
+    Filter by permission (ADMIN, MAINTAIN, WRITE, TRIAGE, READ, ALL). Default: ALL.
 
 .PARAMETER Affil
     Collaborators affiliation (ALL, OUTSIDE, DIRECT). Default: ALL.
@@ -35,7 +35,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Token,
     [Parameter(Mandatory=$true)][string]$Org,
-    [string]$Permission = "ADMIN",
+    [string]$Permission = "ALL",
     [string]$Affil = "ALL",
     [string]$CSVPath = "./reports/$Org-$Permission.csv",
     [string]$JSONPath = "./reports/$Org-$Permission.json",
@@ -188,27 +188,13 @@ function Get-GitHubUserName {
     return $resp.name
 }
 
-# Reusable canonical permission mapper
-function Get-CanonicalPermission {
-    param(
-        $Permissions
-    )
-    $permissionOrder = @(
-        @{ key = "admin";    name = "ADMIN" }
-        @{ key = "maintain"; name = "MAINTAIN" }
-        @{ key = "write";    name = "WRITE" }
-        @{ key = "triage";   name = "TRIAGE" }
-        @{ key = "read";     name = "READ" }
-    )
-    foreach ($perm in $permissionOrder) {
-        if ($Permissions.$($perm.key)) {
-            return $perm.name
-        }
-    }
-    return ""
+function Get-GitHubUserPublicEmail {
+    param([string]$Login)
+    $uri = "https://api.github.com/users/$Login"
+    $resp = Invoke-GitHubREST -Uri $uri
+    return $resp.email
 }
 
-# --- SSO Email Extraction Function ---
 function Get-GitHubOrgSSOEmails {
     param(
         [string]$Token,
@@ -216,7 +202,7 @@ function Get-GitHubOrgSSOEmails {
     )
     Write-Log "Checking for SSO/SAML provider ..."
     $ssoQuery = @'
-query($org: String!) {
+query SSOProvider($org: String!) {
   organization(login: $org) {
     samlIdentityProvider { id }
   }
@@ -244,7 +230,7 @@ query($org: String!) {
 
     Write-Log "Fetching SSO emails for $Org ..."
     $ssoEmailQuery = @'
-query($org: String!, $cursor: String) {
+query SSOEmails($org: String!, $cursor: String) {
   organization(login: $org) {
     samlIdentityProvider {
       externalIdentities(first: 50, after: $cursor) {
@@ -285,10 +271,64 @@ query($org: String!, $cursor: String) {
     return $emailArray
 }
 
+function Get-GitHubOrgVerifiedEmails {
+    param(
+        [string]$Token,
+        [string]$Org,
+        [string[]]$Logins
+    )
+    Write-Log "Fetching organization-verified emails for users..."
+    $results = @()
+    foreach ($login in $Logins) {
+        $query = @"
+query(\$org: String!, \$login: String!) {
+  user(login: \$login) {
+    organizationVerifiedDomainEmails(login: \$org)
+  }
+}
+"@
+        try {
+            $data = Invoke-GitHubGraphQL -Query $query -Variables @{ org = $Org; login = $login }
+            $emails = $data.user.organizationVerifiedDomainEmails
+            if ($emails) {
+                $results += [PSCustomObject]@{
+                    login = $login
+                    verifiedEmail = ($emails -join ', ')
+                }
+            }
+        } catch {
+            Write-ErrorLog "Verified email query for $login failed: $($_.Exception.Message)"
+        }
+        Start-Sleep -Milliseconds 200 # To avoid rate limits
+    }
+    Write-Log "Fetched $($results.Count) verified emails."
+    return $results
+}
+
+# Permission mapping (API key => display name, and display name => API key)
+$permissionMap = @{
+    "read" = "pull"
+    "write" = "push"
+    "admin" = "admin"
+    "maintain" = "maintain"
+    "triage" = "triage"
+    "all" = "all"
+}
+$permissionDisplay = @{
+    "pull" = "read"
+    "push" = "write"
+    "admin" = "admin"
+    "maintain" = "maintain"
+    "triage" = "triage"
+}
+
+$permKey = $Permission.ToLower()
+$apiPermKey = $permissionMap[$permKey]
+
 # 1. Get org ID (GraphQL)
 Write-Log "Getting org ID for $Org ..."
 $orgIdQuery = @'
-query($org: String!) {
+query OrgId($org: String!) {
   organization(login: $org) { id }
 }
 '@
@@ -308,7 +348,7 @@ do {
 } while ($resp.Count -eq 100)
 Write-Log "$($repos.Count) repositories found."
 
-# 3. Get SSO/SAML emails (GraphQL) - modular call with enterprise SAML handling
+# 3. Get SSO/SAML emails (GraphQL)
 $emailArray = @()
 try {
     $emailArray = Get-GitHubOrgSSOEmails -Token $Token -Org $Org
@@ -329,7 +369,7 @@ $memberArray = @()
 $endCursor = $null
 do {
     $membersQuery = @'
-query($org: String!, $cursor: String) {
+query MembersWithRole($org: String!, $cursor: String) {
   organization(login: $org) {
     membersWithRole(first: 50, after: $cursor) {
       edges {
@@ -355,7 +395,84 @@ query($org: String!, $cursor: String) {
 } while ($pi.hasNextPage)
 Write-Log "Fetched $($memberArray.Count) org members with role."
 
-# 5. For each repo, get collaborators (REST), filter by canonical permission type
+# 5. Get all teams in org (REST)
+Write-Log "Fetching teams in org ..."
+$teams = @()
+$page = 1
+do {
+    $uri = "https://api.github.com/orgs/$Org/teams?per_page=100&page=$page"
+    $resp = Invoke-GitHubREST -Uri $uri
+    if ($resp) { $teams += $resp }
+    $page++
+} while ($resp.Count -eq 100)
+Write-Log "$($teams.Count) teams found."
+
+# 6. Build team-repo-permission map and team-member map
+$teamRepoPerms = @()
+$teamMembers = @()
+foreach ($team in $teams) {
+    $teamSlug = $team.slug
+
+    # Get all repos for team and their permissions
+    $pageTR = 1
+    do {
+        $uri = "https://api.github.com/orgs/$Org/teams/$teamSlug/repos?per_page=100&page=$pageTR"
+        $resp = Invoke-GitHubREST -Uri $uri
+        if ($resp) {
+            foreach ($repoPerm in $resp) {
+                $teamRepoPerms += [PSCustomObject]@{
+                    repo = $repoPerm.name
+                    team = $teamSlug
+                    permission = $repoPerm.permissions | Get-Member -MemberType NoteProperty | Where-Object { $repoPerm.permissions."$($_.Name)" } | ForEach-Object { $_.Name }
+                }
+            }
+        }
+        $pageTR++
+    } while ($resp.Count -eq 100)
+
+    # Get all members for team
+    $pageTM = 1
+    do {
+        $uri = "https://api.github.com/orgs/$Org/teams/$teamSlug/members?per_page=100&page=$pageTM"
+        $resp = Invoke-GitHubREST -Uri $uri
+        if ($resp) {
+            foreach ($member in $resp) {
+                $teamMembers += [PSCustomObject]@{
+                    team = $teamSlug
+                    login = $member.login
+                }
+            }
+        }
+        $pageTM++
+    } while ($resp.Count -eq 100)
+}
+
+# 7. Build team-user-repo-permission mapping (effective permissions for team memberships)
+$teamUserRepoPerms = @()
+foreach ($trp in $teamRepoPerms) {
+    $repoName = $trp.repo
+    $teamSlug = $trp.team
+    $permissions = @($trp.permission)
+    $members = $teamMembers | Where-Object { $_.team -eq $teamSlug }
+    foreach ($member in $members) {
+        foreach ($perm in $permissions) {
+            $teamUserRepoPerms += [PSCustomObject]@{
+                orgRepo = $repoName
+                login = $member.login
+                name = ""
+                ssoEmail = ""
+                verifiedEmail = ""
+                publicEmail = ""
+                permission = $permissionDisplay[$perm]
+                org = $Org
+                orgpermission = ""
+                viaTeam = $teamSlug
+            }
+        }
+    }
+}
+
+# 8. For each repo, get direct collaborators (REST), filter by permission type
 Write-Log "Processing repo collaborators..."
 $collabsArray = @()
 foreach ($repo in $repos) {
@@ -365,42 +482,39 @@ foreach ($repo in $repos) {
     if ($collabs) {
         foreach ($collab in $collabs) {
             $login = $collab.login
-
-            # Optional name fetch logic
             $name = $collab.name
             if ($FetchNames -and ([string]::IsNullOrWhiteSpace($name))) {
                 $name = Get-GitHubUserName $login
                 Start-Sleep -Milliseconds 100 # To avoid rate limit
             }
 
-            # Canonical permission mapping
             $permissions = $collab.permissions
-            $matchedPermission = Get-CanonicalPermission $permissions
-            if ($Permission -ne "ALL" -and $matchedPermission -ne $Permission) {
-                continue
+            $directPerm = ""
+            foreach ($permKeyAPI in $permissionDisplay.Keys) {
+                if ($permissions.$permKeyAPI) {
+                    $directPerm = $permissionDisplay[$permKeyAPI]
+                }
             }
 
-            if ($matchedPermission) {
-                # SSO email extraction (from $emailArray)
+            if (($Permission -eq "ALL" -and $directPerm) -or ($permKey -eq $directPerm)) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
-
-                # Avoid per-user profile call to conserve rate limit
+                $verifiedEmail = ""
                 $publicEmail = ""
-
                 $member = $memberArray | Where-Object { $_.login -eq $login }
                 $memberValue = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
 
                 $collabsArray += [PSCustomObject]@{
                     orgRepo = $repo.name
-                    visibility = $repo.visibility
                     login = $login
                     name = $name
                     ssoEmail = $ssoEmailValue
+                    verifiedEmail = $verifiedEmail
                     publicEmail = $publicEmail
-                    permission = $matchedPermission
+                    permission = $directPerm
                     org = $Org
                     orgpermission = $memberValue
+                    viaTeam = ""
                 }
             }
         }
@@ -408,13 +522,83 @@ foreach ($repo in $repos) {
     Start-Sleep -Seconds 2 # Longer sleep to respect rate limits
 }
 
-# 6. Sort and export
+# 9. Combine/merge both direct and team-based permissions, deduplicate by highest permission
+$allRows = @()
+$rowsByKey = @{}
+
+# Add all direct collaborators
+foreach ($c in $collabsArray) {
+    $key = "$($c.orgRepo):$($c.login)"
+    $rowsByKey[$key] = $c
+}
+
+# Add/merge team-user-repo-permissions
+foreach ($t in $teamUserRepoPerms) {
+    $key = "$($t.orgRepo):$($t.login)"
+    if ($rowsByKey.ContainsKey($key)) {
+        # If direct and team, keep highest
+        $current = $rowsByKey[$key]
+        $order = @("read", "triage", "write", "maintain", "admin")
+        $curIdx = $order.IndexOf($current.permission)
+        $teamIdx = $order.IndexOf($t.permission)
+        if ($teamIdx -gt $curIdx) {
+            $rowsByKey[$key] = $t
+        } elseif ($teamIdx -eq $curIdx -and -not [string]::IsNullOrWhiteSpace($t.viaTeam)) {
+            # If equal, prefer direct, unless this is the only way (set viaTeam info just for info)
+            $rowsByKey[$key].viaTeam += ",$($t.viaTeam)"
+        }
+    } else {
+        $rowsByKey[$key] = $t
+    }
+}
+
+$allRows = $rowsByKey.Values
+
+# 10. Fetch public, verified, and SSO emails for all unique logins
+$uniqueLogins = $allRows | Select-Object -ExpandProperty login -Unique
+
+Write-Log "Fetching public emails for all unique logins..."
+$publicEmails = @{}
+foreach ($login in $uniqueLogins) {
+    $pubEmail = Get-GitHubUserPublicEmail $login
+    $publicEmails[$login] = $pubEmail
+    Start-Sleep -Milliseconds 100
+}
+Write-Log "Fetched $($publicEmails.Count) public emails."
+
+$verifiedEmails = Get-GitHubOrgVerifiedEmails -Token $Token -Org $Org -Logins $uniqueLogins
+$verifiedEmailsHash = @{}
+foreach ($v in $verifiedEmails) { $verifiedEmailsHash[$v.login] = $v.verifiedEmail }
+
+$ssoEmailsHash = @{}
+foreach ($s in $emailArray) { $ssoEmailsHash[$s.login] = $s.ssoEmail }
+
+# 11. Merge all three email types into each row
+foreach ($row in $allRows) {
+    $row.publicEmail    = $publicEmails[$row.login]
+    $row.verifiedEmail  = $verifiedEmailsHash[$row.login]
+    $row.ssoEmail       = $ssoEmailsHash[$row.login]
+    if (-not $row.name -or $row.name -eq "") {
+        $row.name = Get-GitHubUserName $row.login
+    }
+    if (-not $row.orgpermission -or $row.orgpermission -eq "") {
+        $member = $memberArray | Where-Object { $_.login -eq $row.login }
+        $row.orgpermission = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
+    }
+}
+
+# 12. Filter by permission if not ALL
+if ($Permission -ne "ALL") {
+    $allRows = $allRows | Where-Object { $_.permission -eq $permKey }
+}
+
+# 13. Sort and export
 Write-Log "Exporting CSV to $CSVPath ..."
-$collabsArray | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
+$allRows | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
 if ($JSONPath) {
     Write-Log "Exporting JSON to $JSONPath ..."
-    $collabsArray | Sort-Object orgRepo | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
+    $allRows | Sort-Object orgRepo | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
 }
 
-Write-Log "Done. $($collabsArray.Count) rows exported."
+Write-Log "Done. $($allRows.Count) rows exported."
