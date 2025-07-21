@@ -44,6 +44,8 @@ param(
     [switch]$FetchNames
 )
 
+Write-Host "DEBUG: Org parameter received: '$Org'"  
+
 function Write-Log { param($msg) Write-Host "[$((Get-Date).ToString('s'))] $msg" }
 function Write-ErrorLog { param($msg) Write-Host "[$((Get-Date).ToString('s'))] ERROR: $msg" -ForegroundColor Red }
 
