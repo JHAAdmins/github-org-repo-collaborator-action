@@ -188,26 +188,6 @@ function Get-GitHubUserName {
     return $resp.name
 }
 
-# Reusable canonical permission mapper
-function Get-CanonicalPermission {
-    param(
-        $Permissions
-    )
-    $permissionOrder = @(
-        @{ key = "admin";    name = "ADMIN" }
-        @{ key = "maintain"; name = "MAINTAIN" }
-        @{ key = "write";    name = "WRITE" }
-        @{ key = "triage";   name = "TRIAGE" }
-        @{ key = "read";     name = "READ" }
-    )
-    foreach ($perm in $permissionOrder) {
-        if ($Permissions.$($perm.key)) {
-            return $perm.name
-        }
-    }
-    return ""
-}
-
 # --- SSO Email Extraction Function ---
 function Get-GitHubOrgSSOEmails {
     param(
@@ -216,7 +196,7 @@ function Get-GitHubOrgSSOEmails {
     )
     Write-Log "Checking for SSO/SAML provider ..."
     $ssoQuery = @'
-query($org: String!) {
+query SSOProvider($org: String!) {
   organization(login: $org) {
     samlIdentityProvider { id }
   }
@@ -244,7 +224,7 @@ query($org: String!) {
 
     Write-Log "Fetching SSO emails for $Org ..."
     $ssoEmailQuery = @'
-query($org: String!, $cursor: String) {
+query SSOEmails($org: String!, $cursor: String) {
   organization(login: $org) {
     samlIdentityProvider {
       externalIdentities(first: 50, after: $cursor) {
@@ -285,10 +265,45 @@ query($org: String!, $cursor: String) {
     return $emailArray
 }
 
+# --- Verified Email Extraction Function ---
+function Get-GitHubOrgVerifiedEmails {
+    param(
+        [string]$Token,
+        [string]$Org,
+        [string[]]$Logins
+    )
+    Write-Log "Fetching organization-verified emails for users..."
+    $results = @()
+    foreach ($login in $Logins) {
+        $query = @"
+query(\$org: String!, \$login: String!) {
+  user(login: \$login) {
+    organizationVerifiedDomainEmails(login: \$org)
+  }
+}
+"@
+        try {
+            $data = Invoke-GitHubGraphQL -Query $query -Variables @{ org = $Org; login = $login }
+            $emails = $data.user.organizationVerifiedDomainEmails
+            if ($emails) {
+                $results += [PSCustomObject]@{
+                    login = $login
+                    verifiedEmail = ($emails -join ', ')
+                }
+            }
+        } catch {
+            Write-ErrorLog "Verified email query for $login failed: $($_.Exception.Message)"
+        }
+        Start-Sleep -Milliseconds 200 # To avoid rate limits
+    }
+    Write-Log "Fetched $($results.Count) verified emails."
+    return $results
+}
+
 # 1. Get org ID (GraphQL)
 Write-Log "Getting org ID for $Org ..."
 $orgIdQuery = @'
-query($org: String!) {
+query OrgId($org: String!) {
   organization(login: $org) { id }
 }
 '@
@@ -329,7 +344,7 @@ $memberArray = @()
 $endCursor = $null
 do {
     $membersQuery = @'
-query($org: String!, $cursor: String) {
+query MembersWithRole($org: String!, $cursor: String) {
   organization(login: $org) {
     membersWithRole(first: 50, after: $cursor) {
       edges {
@@ -355,7 +370,19 @@ query($org: String!, $cursor: String) {
 } while ($pi.hasNextPage)
 Write-Log "Fetched $($memberArray.Count) org members with role."
 
-# 5. For each repo, get collaborators (REST), filter by canonical permission type
+# --- Permission Mapping ---
+$permissionMap = @{
+    "read" = "pull"
+    "write" = "push"
+    "admin" = "admin"
+    "maintain" = "maintain"
+    "triage" = "triage"
+    "all" = "all"
+}
+$permKey = $Permission.ToLower()
+$apiPermKey = $permissionMap[$permKey]
+
+# 5. For each repo, get collaborators (REST), filter by permission type
 Write-Log "Processing repo collaborators..."
 $collabsArray = @()
 foreach ($repo in $repos) {
@@ -365,19 +392,25 @@ foreach ($repo in $repos) {
     if ($collabs) {
         foreach ($collab in $collabs) {
             $login = $collab.login
-
-            # Optional name fetch logic
             $name = $collab.name
             if ($FetchNames -and ([string]::IsNullOrWhiteSpace($name))) {
                 $name = Get-GitHubUserName $login
                 Start-Sleep -Milliseconds 100 # To avoid rate limit
             }
 
-            # Canonical permission mapping
             $permissions = $collab.permissions
-            $matchedPermission = Get-CanonicalPermission $permissions
-            if ($Permission -ne "ALL" -and $matchedPermission -ne $Permission) {
-                continue
+            $matchedPermission = ""
+            if ($Permission -eq "ALL") {
+                foreach ($key in $permissions.PSObject.Properties) {
+                    if ($key.Value) {
+                        $matchedPermission = $key.Name
+                        break
+                    }
+                }
+            } else {
+                if ($permissions.$apiPermKey) {
+                    $matchedPermission = $permKey
+                }
             }
 
             if ($matchedPermission) {
@@ -385,8 +418,8 @@ foreach ($repo in $repos) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
 
-                # Avoid per-user profile call to conserve rate limit
-                $publicEmail = ""
+                # Mark for post-merge with verified email
+                $verifiedEmail = ""
 
                 $member = $memberArray | Where-Object { $_.login -eq $login }
                 $memberValue = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
@@ -397,7 +430,7 @@ foreach ($repo in $repos) {
                     login = $login
                     name = $name
                     ssoEmail = $ssoEmailValue
-                    publicEmail = $publicEmail
+                    verifiedEmail = $verifiedEmail
                     permission = $matchedPermission
                     org = $Org
                     orgpermission = $memberValue
@@ -408,7 +441,19 @@ foreach ($repo in $repos) {
     Start-Sleep -Seconds 2 # Longer sleep to respect rate limits
 }
 
-# 6. Sort and export
+# 6. Fetch verified emails for all unique logins in $collabsArray
+$uniqueLogins = $collabsArray | Select-Object -ExpandProperty login -Unique
+$verifiedEmails = Get-GitHubOrgVerifiedEmails -Token $Token -Org $Org -Logins $uniqueLogins
+
+# 7. Merge verified emails into collabsArray
+foreach ($collab in $collabsArray) {
+    $emailObj = $verifiedEmails | Where-Object { $_.login -eq $collab.login }
+    if ($emailObj) {
+        $collab.verifiedEmail = $emailObj.verifiedEmail
+    }
+}
+
+# 8. Sort and export
 Write-Log "Exporting CSV to $CSVPath ..."
 $collabsArray | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
