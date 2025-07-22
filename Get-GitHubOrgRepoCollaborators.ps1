@@ -596,6 +596,10 @@ foreach ($row in $allRows) {
         $member = $memberArray | Where-Object { $_.login -eq $row.login }
         $row.orgpermission = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
     }
+    # Set repo permission as admin if user is owner
+    if ($row.orgpermission -eq "OWNER") {
+        $row.permission = "admin"
+    }
 }
 Write-Log "Step 11: Email merging complete."
 
