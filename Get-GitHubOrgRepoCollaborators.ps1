@@ -193,8 +193,6 @@ function Get-GitHubUserName {
     return $resp.name
 }
 
-# Removed Get-GitHubUserPublicEmail function
-
 function Get-GitHubOrgSSOEmails {
     param(
         [string]$Token,
@@ -476,7 +474,6 @@ foreach ($trp in $teamRepoPerms) {
                 name = ""
                 ssoEmail = ""
                 verifiedEmail = ""
-                # Removed publicEmail field
                 permission = $permissionDisplay[$perm]
                 org = $Org
                 orgpermission = ""
@@ -515,7 +512,6 @@ foreach ($repo in $repos) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
                 $verifiedEmail = ""
-                # Removed publicEmail variable
                 $member = $memberArray | Where-Object { $_.login -eq $login }
                 $memberValue = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
 
@@ -525,7 +521,6 @@ foreach ($repo in $repos) {
                     name = $name
                     ssoEmail = $ssoEmailValue
                     verifiedEmail = $verifiedEmail
-                    # Removed publicEmail field
                     permission = $directPerm
                     org = $Org
                     orgpermission = $memberValue
@@ -570,6 +565,33 @@ foreach ($t in $teamUserRepoPerms) {
 }
 
 $allRows = $rowsByKey.Values
+
+# Ensure all org owners are listed as admin for each repo
+foreach ($repo in $repos) {
+    foreach ($owner in $memberArray | Where-Object { $_.role -eq "OWNER" }) {
+        $key = "$($repo.name):$($owner.login)"
+        if (-not $rowsByKey.ContainsKey($key)) {
+            $rowsByKey[$key] = [PSCustomObject]@{
+                orgRepo = $repo.name
+                login = $owner.login
+                name = Get-GitHubUserName $owner.login
+                ssoEmail = ""
+                verifiedEmail = ""
+                permission = "admin"
+                org = $Org
+                orgpermission = "OWNER"
+                viaTeam = ""
+            }
+        } else {
+            # If owner is present, always set permission to admin if orgpermission is OWNER
+            if ($rowsByKey[$key].orgpermission -eq "OWNER") {
+                $rowsByKey[$key].permission = "admin"
+            }
+        }
+    }
+}
+$allRows = $rowsByKey.Values
+
 Write-Log "Step 9: Combination and deduplication complete. Total rows: $($allRows.Count)"
 
 # 10. Fetch verified and SSO emails for all unique logins
@@ -586,22 +608,29 @@ foreach ($s in $emailArray) { $ssoEmailsHash[$s.login] = $s.ssoEmail }
 # 11. Merge email types into each row
 Write-Log "Step 11: Merging email addresses into each row ..."
 foreach ($row in $allRows) {
-    # Removed publicEmail assignment
     $row.verifiedEmail  = $verifiedEmailsHash[$row.login]
     $row.ssoEmail       = $ssoEmailsHash[$row.login]
     if (-not $row.name -or $row.name -eq "") {
         $row.name = Get-GitHubUserName $row.login
     }
-    if (-not $row.orgpermission -or $row.orgpermission -eq "") {
-        $member = $memberArray | Where-Object { $_.login -eq $row.login }
-        $row.orgpermission = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
-    }
-    # Set repo permission as admin if user is owner
-    if ($row.orgpermission -eq "OWNER") {
-        $row.permission = "admin"
-    }
 }
 Write-Log "Step 11: Email merging complete."
+
+# 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR
+foreach ($row in $allRows) {
+    $member = $memberArray | Where-Object { $_.login -eq $row.login }
+    if ($member) {
+        if ($member.role -eq "OWNER") {
+            $row.orgpermission = "OWNER"
+        } elseif ($member.role -eq "MEMBER") {
+            $row.orgpermission = "MEMBER"
+        } else {
+            $row.orgpermission = "OUTSIDE COLLABORATOR"
+        }
+    } else {
+        $row.orgpermission = "OUTSIDE COLLABORATOR"
+    }
+}
 
 # 12. Filter by permission if not ALL
 Write-Log "Step 12: Filtering by permission ($Permission) ..."
