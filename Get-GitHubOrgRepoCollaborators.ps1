@@ -44,8 +44,6 @@ param(
     [switch]$FetchNames
 )
 
-Write-Log "========== Script started =========="
-Write-Log "Step 0: Parameters received."
 Write-Host "DEBUG: Org parameter received: '$Org'"  
 
 function Write-Log { param($msg) Write-Host "[$((Get-Date).ToString('s'))] $msg" }
