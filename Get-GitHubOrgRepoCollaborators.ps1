@@ -597,19 +597,6 @@ foreach ($row in $allRows) {
         $row.orgpermission = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
     }
 }
-
-# --- FIX: Add orgrole for reporting (Member, Owner, Outside Collaborator) ---
-foreach ($row in $allRows) {
-    if ($row.orgpermission -eq "OWNER") {
-        $row.orgrole = "Owner"
-    } elseif ($row.orgpermission -eq "MEMBER") {
-        $row.orgrole = "Member"
-    } else {
-        $row.orgrole = "Outside Collaborator"
-    }
-}
-Write-Log "Step 11b: orgrole labeling complete."
-
 Write-Log "Step 11: Email merging complete."
 
 # 12. Filter by permission if not ALL
@@ -621,11 +608,11 @@ Write-Log "Step 12: Filtering complete. Rows remaining: $($allRows.Count)"
 
 # 13. Sort and export
 Write-Log "Step 13: Exporting CSV to $CSVPath ..."
-$allRows | Select-Object orgRepo,login,name,orgrole,ssoEmail,verifiedEmail,permission,viaTeam | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
+$allRows | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
 if ($JSONPath) {
     Write-Log "Step 13: Exporting JSON to $JSONPath ..."
-    $allRows | Select-Object orgRepo,login,name,orgrole,ssoEmail,verifiedEmail,permission,viaTeam | Sort-Object orgRepo | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
+    $allRows | Sort-Object orgRepo | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
