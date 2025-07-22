@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Export all GitHub organization repository collaborators, including SSO, verified org domain, and public profile emails, as well as team-based permissions.
+    Export all GitHub organization repository collaborators, including SSO, verified org domain emails, as well as team-based permissions.
 
 .PARAMETER Token
     GitHub Personal Access Token (or GitHub App installation token).
@@ -195,13 +195,7 @@ function Get-GitHubUserName {
     return $resp.name
 }
 
-function Get-GitHubUserPublicEmail {
-    param([string]$Login)
-    Write-Log "Fetching public email for user: $Login"
-    $uri = "https://api.github.com/users/$Login"
-    $resp = Invoke-GitHubREST -Uri $uri
-    return $resp.email
-}
+# Removed Get-GitHubUserPublicEmail function
 
 function Get-GitHubOrgSSOEmails {
     param(
@@ -484,7 +478,7 @@ foreach ($trp in $teamRepoPerms) {
                 name = ""
                 ssoEmail = ""
                 verifiedEmail = ""
-                publicEmail = ""
+                # Removed publicEmail field
                 permission = $permissionDisplay[$perm]
                 org = $Org
                 orgpermission = ""
@@ -523,7 +517,7 @@ foreach ($repo in $repos) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
                 $verifiedEmail = ""
-                $publicEmail = ""
+                # Removed publicEmail variable
                 $member = $memberArray | Where-Object { $_.login -eq $login }
                 $memberValue = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
 
@@ -533,7 +527,7 @@ foreach ($repo in $repos) {
                     name = $name
                     ssoEmail = $ssoEmailValue
                     verifiedEmail = $verifiedEmail
-                    publicEmail = $publicEmail
+                    # Removed publicEmail field
                     permission = $directPerm
                     org = $Org
                     orgpermission = $memberValue
@@ -580,17 +574,9 @@ foreach ($t in $teamUserRepoPerms) {
 $allRows = $rowsByKey.Values
 Write-Log "Step 9: Combination and deduplication complete. Total rows: $($allRows.Count)"
 
-# 10. Fetch public, verified, and SSO emails for all unique logins
-Write-Log "Step 10: Fetching public emails for all unique logins..."
+# 10. Fetch verified and SSO emails for all unique logins
+Write-Log "Step 10: Fetching verified emails for all unique logins..."
 $uniqueLogins = $allRows | Select-Object -ExpandProperty login -Unique
-
-$publicEmails = @{}
-foreach ($login in $uniqueLogins) {
-    $pubEmail = Get-GitHubUserPublicEmail $login
-    $publicEmails[$login] = $pubEmail
-    Start-Sleep -Milliseconds 100
-}
-Write-Log "Step 10: Fetched $($publicEmails.Count) public emails."
 
 $verifiedEmails = Get-GitHubOrgVerifiedEmails -Token $Token -Org $Org -Logins $uniqueLogins
 $verifiedEmailsHash = @{}
@@ -599,10 +585,10 @@ foreach ($v in $verifiedEmails) { $verifiedEmailsHash[$v.login] = $v.verifiedEma
 $ssoEmailsHash = @{}
 foreach ($s in $emailArray) { $ssoEmailsHash[$s.login] = $s.ssoEmail }
 
-# 11. Merge all three email types into each row
+# 11. Merge email types into each row
 Write-Log "Step 11: Merging email addresses into each row ..."
 foreach ($row in $allRows) {
-    $row.publicEmail    = $publicEmails[$row.login]
+    # Removed publicEmail assignment
     $row.verifiedEmail  = $verifiedEmailsHash[$row.login]
     $row.ssoEmail       = $ssoEmailsHash[$row.login]
     if (-not $row.name -or $row.name -eq "") {
