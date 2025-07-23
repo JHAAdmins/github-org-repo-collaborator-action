@@ -405,7 +405,6 @@ foreach ($m in $memberArray) {
     $orgMembersByLogin[$m.login] = $m.role
     if ($m.role -eq "OWNER") { $orgOwners += $m.login }
 }
-Write-Log "Org Owners Detected: $($orgOwners -join ', ')"
 
 # 5. Get all teams in org (REST)
 Write-Log "Step 5: Fetching teams in org ..."
@@ -604,7 +603,6 @@ foreach ($row in $allRows) {
 }
 
 # 13. FINAL: Set orgpermission for every row (OWNER always wins, then MEMBER, then OUTSIDE COLLABORATOR)
-Write-Log "Step 13: Assigning orgpermission to each row (OWNER always wins)..."
 foreach ($row in $allRows) {
     if ($orgOwners -contains $row.login) {
         $row.orgpermission = "OWNER"
@@ -615,8 +613,6 @@ foreach ($row in $allRows) {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
 }
-Write-Log "Step 13: Sample OWNER rows in final output:"
-$allRows | Where-Object { $_.orgpermission -eq "OWNER" } | Select-Object -First 10 orgRepo,login,orgpermission,permission | Format-Table | Out-String | Write-Host
 
 # 14. Filter by permission if not ALL
 Write-Log "Step 14: Filtering by permission ($Permission) ..."
