@@ -614,7 +614,7 @@ foreach ($row in $allRows) {
     if ($orgMembersByLogin.ContainsKey($row.login)) {
         $rawRole = $orgMembersByLogin[$row.login].ToUpper()
 
-        switch ($rawRole) [
+        switch ($rawRole) {
             "OWNER" {$row.orgpermission = "OWNER" }
             "MEMBER" {row.orgpermission = "MEMBER" }
             default {
@@ -632,17 +632,6 @@ foreach ($row in $allRows) {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
 }
-<#        if ($orgMembersByLogin[$loginKey] -eq "OWNER") {
-            $row.orgpermission = "OWNER"
-        } elseif ($orgMembersByLogin[$loginKey] -eq "MEMBER" -and $row.orgpermission -ne "OWNER") {
-            $row.orgpermission = "MEMBER"
-        }
-    } else {
-        if ($row.orgpermission -ne "OWNER") {
-            $row.orgpermission = "OUTSIDE COLLABORATOR"
-        }
-    }
-    #>
     # PATCH: Ensure orgpermission is always a valid org role
     if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
         Write-Host "DEBUG: Invalid orgpermission value for $($row.login): $($row.orgpermission)" -ForegroundColor Yellow
