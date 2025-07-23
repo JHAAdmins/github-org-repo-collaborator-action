@@ -616,8 +616,12 @@ foreach ($row in $allRows) {
 }
 Write-Log "Step 11: Email merging complete."
 
-# 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR
+# 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR, and don't overwrite if already set to OWNER or MEMBER
 foreach ($row in $allRows) {
+    # Only update orgpermission if not already OWNER or MEMBER
+    if ($row.orgpermission -eq "OWNER" -or $row.orgpermission -eq "MEMBER") {
+        continue
+    }
     $member = $memberArray | Where-Object { $_.login -eq $row.login }
     if ($member) {
         if ($member.role -eq "OWNER") {
