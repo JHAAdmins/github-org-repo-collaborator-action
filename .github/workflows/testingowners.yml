@@ -1,0 +1,38 @@
+name: Audit GitHub Org JHAADMINS s ALL Permissions
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  audit-collaborators:
+    runs-on: [self-hosted]
+    timeout-minutes: 720
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Download Get-GitHubOrgRepoCollaborators.ps1 from JHAAdmins/github-org-repo-collaborator-action
+        run: |
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/JHAAdmins/github-org-repo-collaborator-action/main/Get-GitHubOrgRepoCollaborators.ps1" -OutFile "Get-GitHubOrgRepoCollaborators.ps1"
+        shell: pwsh
+
+      - name: Run Get-GitHubOrgRepoCollaborators.ps1 for jhtechnologyservices org access
+        env:
+          JHA_AUDIT: ${{ secrets.JHA_AUDIT }}
+        run: |
+         ./Get-GitHubOrgRepoCollaborators.ps1 `
+          -Token $env:JHA_AUDIT `
+          -Org "jhaadmins" `
+          -Permission "ALL"
+        shell: pwsh
+  
+      - name: Commit CSV and JSON report
+        run: |
+          git config --global user.email "jonball@jhacorp.com"
+          git config --global user.name "Jonathan Ball"
+          git add reports/jhaadmins-ALL.csv reports/jhaadmins-ALL.json
+          git commit -m "Add updated jhaadmins ALL report"
+          git push --force origin main
