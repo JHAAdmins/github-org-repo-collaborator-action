@@ -614,7 +614,12 @@ foreach ($row in $allRows) {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
 }
-
+# Debug: ensure orgpermission is always a valid org role
+    if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
+        Write-Host "DEBUG: Invalid orgpermission value for $($row.login): $($row.orgpermission)" -ForegroundColor Yellow
+        $row.orgpermission = "OUTSIDE COLLABORATOR"
+    }
+}
 # 13. Filter by permission if not ALL
 Write-Log "Step 12: Filtering by permission ($Permission) ..."
 if ($Permission -ne "ALL") {
