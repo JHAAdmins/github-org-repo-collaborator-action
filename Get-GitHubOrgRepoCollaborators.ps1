@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
     Export all GitHub organization repository collaborators, including SSO, verified org domain emails, as well as team-based permissions.
+    Ensures that all org owners are shown with orgpermission="OWNER" and permission="admin" for every repo.
 
 .PARAMETER Token
     GitHub Personal Access Token (or GitHub App installation token).
@@ -35,7 +36,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Token,
     [Parameter(Mandatory=$true)][string]$Org,
-    [Parameter(Mandatory=$true)][string]$Permission,
+    [string]$Permission = "ALL",
     [string]$Affil = "ALL",
     [string]$CSVPath = "./reports/$Org-$Permission.csv",
     [string]$JSONPath = "./reports/$Org-$Permission.json",
@@ -43,8 +44,6 @@ param(
     [int]$Delay = 2000,
     [switch]$FetchNames
 )
-
-Write-Host "DEBUG: Org parameter received: '$Org'"
 
 function Write-Log { param($msg) Write-Host "[$((Get-Date).ToString('s'))] $msg" }
 function Write-ErrorLog { param($msg) Write-Host "[$((Get-Date).ToString('s'))] ERROR: $msg" -ForegroundColor Red }
@@ -398,11 +397,14 @@ query MembersWithRole($Org: String!, $cursor: String) {
     $endCursor = $pi.endCursor
 } while ($pi.hasNextPage)
 Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
-Write-Log "DEBUG: All org owners: $(@($memberArray | Where-Object { $_.role -eq 'OWNER' } | Select-Object -ExpandProperty login) -join ',')"
 
-# Build a lookup table for org member roles
+# Build a lookup table for org member roles and get org owners list
 $orgMembersByLogin = @{}
-foreach ($m in $memberArray) { $orgMembersByLogin[$m.login] = $m.role }
+$orgOwners = @()
+foreach ($m in $memberArray) { 
+    $orgMembersByLogin[$m.login] = $m.role
+    if ($m.role -eq "OWNER") { $orgOwners += $m.login }
+}
 
 # 5. Get all teams in org (REST)
 Write-Log "Step 5: Fetching teams in org ..."
@@ -535,7 +537,6 @@ Write-Log "Step 8: Repo collaborators processed."
 
 # 9. Combine/merge both direct and team-based permissions, deduplicate by highest permission
 Write-Log "Step 9: Combining and deduplicating collaborator and team permissions ..."
-$allRows = @()
 $rowsByKey = @{}
 foreach ($c in $collabsArray) {
     $key = "$($c.orgRepo):$($c.login)"
@@ -558,17 +559,15 @@ foreach ($t in $teamUserRepoPerms) {
     }
 }
 
-$allRows = $rowsByKey.Values
-
-# Ensure all org owners are listed as admin for each repo and orgpermission = OWNER
+# 10. Ensure all org owners are present in every repo with orgpermission=OWNER and permission=admin
 foreach ($repo in $repos) {
-    foreach ($owner in $memberArray | Where-Object { $_.role -eq "OWNER" }) {
-        $key = "$($repo.name):$($owner.login)"
+    foreach ($ownerLogin in $orgOwners) {
+        $key = "$($repo.name):$ownerLogin"
         if (-not $rowsByKey.ContainsKey($key)) {
             $rowsByKey[$key] = [PSCustomObject]@{
                 orgRepo = $repo.name
-                login = $owner.login
-                name = Get-GitHubUserName $owner.login
+                login = $ownerLogin
+                name = Get-GitHubUserName $ownerLogin
                 ssoEmail = ""
                 verifiedEmail = ""
                 permission = "admin"
@@ -577,17 +576,16 @@ foreach ($repo in $repos) {
                 viaTeam = ""
             }
         } else {
-            $rowsByKey[$key].permission = "admin"
             $rowsByKey[$key].orgpermission = "OWNER"
+            $rowsByKey[$key].permission = "admin"
         }
     }
 }
+
 $allRows = $rowsByKey.Values
 
-Write-Log "Step 9: Combination and deduplication complete. Total rows: $($allRows.Count)"
-
-# 10. Fetch verified and SSO emails for all unique logins
-Write-Log "Step 10: Fetching verified emails for all unique logins..."
+# 11. Fetch verified and SSO emails for all unique logins
+Write-Log "Step 11: Fetching verified emails for all unique logins..."
 $uniqueLogins = $allRows | Select-Object -ExpandProperty login -Unique
 $verifiedEmails = Get-GitHubOrgVerifiedEmails -Token $Token -Org $Org -Logins $uniqueLogins
 $verifiedEmailsHash = @{}
@@ -595,8 +593,7 @@ foreach ($v in $verifiedEmails) { $verifiedEmailsHash[$v.login] = $v.verifiedEma
 $ssoEmailsHash = @{}
 foreach ($s in $emailArray) { $ssoEmailsHash[$s.login] = $s.ssoEmail }
 
-# 11. Merge email types into each row
-Write-Log "Step 11: Merging email addresses into each row ..."
+# 12. Merge email types into each row and ensure name filled in
 foreach ($row in $allRows) {
     $row.verifiedEmail  = $verifiedEmailsHash[$row.login]
     $row.ssoEmail       = $ssoEmailsHash[$row.login]
@@ -604,30 +601,32 @@ foreach ($row in $allRows) {
         $row.name = Get-GitHubUserName $row.login
     }
 }
-Write-Log "Step 11: Email merging complete."
 
-# 12. Final: Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR
+# 13. Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR, but OWNER always wins
 foreach ($row in $allRows) {
-    if ($orgMembersByLogin.ContainsKey($row.login)) {
-        $row.orgpermission = $orgMembersByLogin[$row.login]
+    if ($orgOwners -contains $row.login) {
+        $row.orgpermission = "OWNER"
+        $row.permission = "admin"
+    } elseif ($orgMembersByLogin.ContainsKey($row.login)) {
+        $row.orgpermission = "MEMBER"
     } else {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
 }
 
-# 13. Filter by permission if not ALL
-Write-Log "Step 12: Filtering by permission ($Permission) ..."
+# 14. Filter by permission if not ALL
+Write-Log "Step 14: Filtering by permission ($Permission) ..."
 if ($Permission -ne "ALL") {
     $allRows = $allRows | Where-Object { $_.permission -eq $permKey }
 }
-Write-Log "Step 12: Filtering complete. Rows remaining: $($allRows.Count)"
+Write-Log "Step 14: Filtering complete. Rows remaining: $($allRows.Count)"
 
-# 14. Sort and export
-Write-Log "Step 13: Exporting CSV to $CSVPath ..."
+# 15. Sort and export
+Write-Log "Step 15: Exporting CSV to $CSVPath ..."
 $allRows | Sort-Object orgRepo | Select-Object orgRepo,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
 if ($JSONPath) {
-    Write-Log "Step 13: Exporting JSON to $JSONPath ..."
+    Write-Log "Step 15: Exporting JSON to $JSONPath ..."
     $allRows | Sort-Object orgRepo | Select-Object orgRepo,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
 }
 
