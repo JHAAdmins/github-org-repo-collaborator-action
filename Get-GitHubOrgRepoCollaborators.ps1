@@ -625,9 +625,6 @@ Write-Log "Step 11: Email merging complete."
 
 # 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR, with array-safe comparison
 foreach ($row in $allRows) {
-    if ($row.orgpermission -eq "OWNER" -or $row.orgpermission -eq "MEMBER") {
-        continue
-    }
     if ($orgMembersByLogin.ContainsKey($row.login)) {
         $row.orgpermission = $orgMembersByLogin[$row.login]
     } else {
@@ -652,4 +649,3 @@ if ($JSONPath) {
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
-
