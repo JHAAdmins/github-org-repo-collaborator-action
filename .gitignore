@@ -87,8 +87,6 @@ typings/
 # DynamoDB Local files
 .dynamodb/
 
-# CSV reports
-*.csv
 
 # .DS_Store
 .DS_Store
