@@ -400,9 +400,9 @@ query MembersWithRole($Org: String!, $cursor: String) {
 Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
 Write-Log "DEBUG: All org owners: $(@($memberArray | Where-Object { $_.role -eq 'OWNER' } | Select-Object -ExpandProperty login) -join ',')"
 
-# Build a lookup table for org member roles
+# Build a lookup table for org member roles (case-insensitive)
 $orgMembersByLogin = @{}
-foreach ($m in $memberArray) { $orgMembersByLogin[$m.login] = $m.role }
+foreach ($m in $memberArray) { $orgMembersByLogin[$m.login.ToLower()] = $m.role }
 
 # 5. Get all teams in org (REST)
 Write-Log "Step 5: Fetching teams in org ..."
@@ -514,7 +514,7 @@ foreach ($repo in $repos) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
                 $verifiedEmail = ""
-                $orgpermission = if ($orgMembersByLogin.ContainsKey($login)) { $orgMembersByLogin[$login] } else { "OUTSIDE COLLABORATOR" }
+                $orgpermission = if ($orgMembersByLogin.ContainsKey($login.ToLower())) { $orgMembersByLogin[$login.ToLower()] } else { "OUTSIDE COLLABORATOR" }
                 $collabsArray += [PSCustomObject]@{
                     orgRepo = $repo.name
                     login = $login
@@ -581,6 +581,8 @@ foreach ($repo in $repos) {
             $rowsByKey[$key].permission = "admin"
             $rowsByKey[$key].orgpermission = "OWNER"
         }
+        # Ensure lookup table has owner as OWNER (case-insensitive)
+        $orgMembersByLogin[$owner.login.ToLower()] = "OWNER"
     }
 }
 $allRows = $rowsByKey.Values
@@ -609,14 +611,17 @@ Write-Log "Step 11: Email merging complete."
 
 # 12. Final: Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR
 foreach ($row in $allRows) {
-    if ($orgMembersByLogin.ContainsKey($row.login)) {
-        if ($orgMembersByLogin[$row.login] -eq "OWNER") {
+    $loginKey = $row.login.ToLower()
+    if ($orgMembersByLogin.ContainsKey($loginKey)) {
+        if ($orgMembersByLogin[$loginKey] -eq "OWNER") {
             $row.orgpermission = "OWNER"
-        } elseif ($orgMembersByLogin[$row.login] -eq "MEMBER") {
+        } elseif ($orgMembersByLogin[$loginKey] -eq "MEMBER" -and $row.orgpermission -ne "OWNER") {
             $row.orgpermission = "MEMBER"
         }
     } else {
-        $row.orgpermission = "OUTSIDE COLLABORATOR"
+        if ($row.orgpermission -ne "OWNER") {
+            $row.orgpermission = "OUTSIDE COLLABORATOR"
+        }
     }
     # PATCH: Ensure orgpermission is always a valid org role
     if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
@@ -641,3 +646,4 @@ if ($JSONPath) {
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
+
