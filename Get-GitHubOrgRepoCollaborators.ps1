@@ -44,7 +44,7 @@ param(
     [switch]$FetchNames
 )
 
-Write-Host "DEBUG: Org parameter received: '$Org'"  
+Write-Host "DEBUG: Org parameter received: '$Org'"
 
 function Write-Log { param($msg) Write-Host "[$((Get-Date).ToString('s'))] $msg" }
 function Write-ErrorLog { param($msg) Write-Host "[$((Get-Date).ToString('s'))] ERROR: $msg" -ForegroundColor Red }
@@ -67,7 +67,6 @@ function Log-RateLimitHeaders {
         $reset = $Headers["X-RateLimit-Reset"]
         $retry = $Headers["Retry-After"]
         $secondary = $Headers["X-RateLimit-Secondary-Remaining"]
-
         if ($limit -or $remaining -or $reset) {
             Write-Log "$ApiType Rate Limit: limit=$limit, remaining=$remaining, reset=$reset"
         }
@@ -401,7 +400,7 @@ query MembersWithRole($Org: String!, $cursor: String) {
 Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
 Write-Log "DEBUG: All org owners: $(@($memberArray | Where-Object { $_.role -eq 'OWNER' } | Select-Object -ExpandProperty login) -join ',')"
 
-# --- FIX: Build a lookup hashtable for member roles ---
+# Build a lookup table for org member roles
 $orgMembersByLogin = @{}
 foreach ($m in $memberArray) { $orgMembersByLogin[$m.login] = $m.role }
 
@@ -502,9 +501,8 @@ foreach ($repo in $repos) {
             $name = $collab.name
             if ($FetchNames -and ([string]::IsNullOrWhiteSpace($name))) {
                 $name = Get-GitHubUserName $login
-                Start-Sleep -Milliseconds 100 # To avoid rate limit
+                Start-Sleep -Milliseconds 100
             }
-
             $permissions = $collab.permissions
             $directPerm = ""
             foreach ($permKeyAPI in $permissionDisplay.Keys) {
@@ -512,14 +510,11 @@ foreach ($repo in $repos) {
                     $directPerm = $permissionDisplay[$permKeyAPI]
                 }
             }
-
             if (($Permission -eq "ALL" -and $directPerm) -or ($permKey -eq $directPerm)) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
                 $verifiedEmail = ""
-                # --- FIX: Set orgpermission based on lookup ---
                 $orgpermission = if ($orgMembersByLogin.ContainsKey($login)) { $orgMembersByLogin[$login] } else { "OUTSIDE COLLABORATOR" }
-
                 $collabsArray += [PSCustomObject]@{
                     orgRepo = $repo.name
                     login = $login
@@ -534,7 +529,7 @@ foreach ($repo in $repos) {
             }
         }
     }
-    Start-Sleep -Seconds 2 # Longer sleep to respect rate limits
+    Start-Sleep -Seconds 2
 }
 Write-Log "Step 8: Repo collaborators processed."
 
@@ -542,18 +537,13 @@ Write-Log "Step 8: Repo collaborators processed."
 Write-Log "Step 9: Combining and deduplicating collaborator and team permissions ..."
 $allRows = @()
 $rowsByKey = @{}
-
-# Add all direct collaborators
 foreach ($c in $collabsArray) {
     $key = "$($c.orgRepo):$($c.login)"
     $rowsByKey[$key] = $c
 }
-
-# Add/merge team-user-repo-permissions
 foreach ($t in $teamUserRepoPerms) {
     $key = "$($t.orgRepo):$($t.login)"
     if ($rowsByKey.ContainsKey($key)) {
-        # If direct and team, keep highest
         $current = $rowsByKey[$key]
         $order = @("read", "triage", "write", "maintain", "admin")
         $curIdx = $order.IndexOf($current.permission)
@@ -561,7 +551,6 @@ foreach ($t in $teamUserRepoPerms) {
         if ($teamIdx -gt $curIdx) {
             $rowsByKey[$key] = $t
         } elseif ($teamIdx -eq $curIdx -and -not [string]::IsNullOrWhiteSpace($t.viaTeam)) {
-            # If equal, prefer direct, unless this is the only way (set viaTeam info just for info)
             $rowsByKey[$key].viaTeam += ",$($t.viaTeam)"
         }
     } else {
@@ -571,7 +560,7 @@ foreach ($t in $teamUserRepoPerms) {
 
 $allRows = $rowsByKey.Values
 
-# Ensure all org owners are listed as admin for each repo
+# Ensure all org owners are listed as admin for each repo and orgpermission = OWNER
 foreach ($repo in $repos) {
     foreach ($owner in $memberArray | Where-Object { $_.role -eq "OWNER" }) {
         $key = "$($repo.name):$($owner.login)"
@@ -588,11 +577,7 @@ foreach ($repo in $repos) {
                 viaTeam = ""
             }
         } else {
-            # If owner is present, always set permission to admin if orgpermission is OWNER
-            if ($rowsByKey[$key].orgpermission -eq "OWNER") {
-                $rowsByKey[$key].permission = "admin"
-            }
-            # --- FIX: Always set orgpermission to OWNER if they're an owner ---
+            $rowsByKey[$key].permission = "admin"
             $rowsByKey[$key].orgpermission = "OWNER"
         }
     }
@@ -604,11 +589,9 @@ Write-Log "Step 9: Combination and deduplication complete. Total rows: $($allRow
 # 10. Fetch verified and SSO emails for all unique logins
 Write-Log "Step 10: Fetching verified emails for all unique logins..."
 $uniqueLogins = $allRows | Select-Object -ExpandProperty login -Unique
-
 $verifiedEmails = Get-GitHubOrgVerifiedEmails -Token $Token -Org $Org -Logins $uniqueLogins
 $verifiedEmailsHash = @{}
 foreach ($v in $verifiedEmails) { $verifiedEmailsHash[$v.login] = $v.verifiedEmail }
-
 $ssoEmailsHash = @{}
 foreach ($s in $emailArray) { $ssoEmailsHash[$s.login] = $s.ssoEmail }
 
@@ -623,7 +606,7 @@ foreach ($row in $allRows) {
 }
 Write-Log "Step 11: Email merging complete."
 
-# 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR, with array-safe comparison
+# 12. Final: Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR
 foreach ($row in $allRows) {
     if ($orgMembersByLogin.ContainsKey($row.login)) {
         $row.orgpermission = $orgMembersByLogin[$row.login]
@@ -632,20 +615,20 @@ foreach ($row in $allRows) {
     }
 }
 
-# 12. Filter by permission if not ALL
+# 13. Filter by permission if not ALL
 Write-Log "Step 12: Filtering by permission ($Permission) ..."
 if ($Permission -ne "ALL") {
     $allRows = $allRows | Where-Object { $_.permission -eq $permKey }
 }
 Write-Log "Step 12: Filtering complete. Rows remaining: $($allRows.Count)"
 
-# 13. Sort and export
+# 14. Sort and export
 Write-Log "Step 13: Exporting CSV to $CSVPath ..."
-$allRows | Sort-Object orgRepo | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
+$allRows | Sort-Object orgRepo | Select-Object orgRepo,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
 if ($JSONPath) {
     Write-Log "Step 13: Exporting JSON to $JSONPath ..."
-    $allRows | Sort-Object orgRepo | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
+    $allRows | Sort-Object orgRepo | Select-Object orgRepo,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
