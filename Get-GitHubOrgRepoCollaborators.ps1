@@ -560,7 +560,7 @@ foreach ($t in $teamUserRepoPerms) {
     }
 }
 
-# 10. Ensure all org owners are present in every repo with orgpermission=admin (legacy/compat)
+# 10. Ensure all org owners are present in every repo with orgpermission=OWNER and permission=admin
 foreach ($repo in $repos) {
     foreach ($ownerLogin in $orgOwners) {
         $key = "$($repo.name):$ownerLogin"
@@ -573,11 +573,11 @@ foreach ($repo in $repos) {
                 verifiedEmail = ""
                 permission = "admin"
                 org = $Org
-                orgpermission = "admin"
+                orgpermission = "OWNER"
                 viaTeam = ""
             }
         } else {
-            $rowsByKey[$key].orgpermission = "admin"
+            $rowsByKey[$key].orgpermission = "OWNER"
             $rowsByKey[$key].permission = "admin"
         }
     }
@@ -603,17 +603,20 @@ foreach ($row in $allRows) {
     }
 }
 
-# 13. FINAL: Set orgpermission for every row (admin for owners, MEMBER for members, OUTSIDE COLLABORATOR for others)
-Write-Log "Step 13: Assigning orgpermission as admin for owners, MEMBER for members, OUTSIDE COLLABORATOR for others..."
+# 13. FINAL: Set orgpermission for every row (OWNER always wins, then MEMBER, then OUTSIDE COLLABORATOR)
+Write-Log "Step 13: Assigning orgpermission to each row (OWNER always wins)..."
 foreach ($row in $allRows) {
     if ($orgOwners -contains $row.login) {
-        $row.orgpermission = "admin"
+        $row.orgpermission = "OWNER"
+        $row.permission = "admin"
     } elseif ($orgMembersByLogin.ContainsKey($row.login)) {
         $row.orgpermission = "MEMBER"
     } else {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
 }
+Write-Log "Step 13: Sample OWNER rows in final output:"
+$allRows | Where-Object { $_.orgpermission -eq "OWNER" } | Select-Object -First 10 orgRepo,login,orgpermission,permission | Format-Table | Out-String | Write-Host
 
 # 14. Filter by permission if not ALL
 Write-Log "Step 14: Filtering by permission ($Permission) ..."
