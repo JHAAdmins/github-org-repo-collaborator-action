@@ -401,6 +401,10 @@ query MembersWithRole($Org: String!, $cursor: String) {
 Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
 Write-Log "DEBUG: All org owners: $(@($memberArray | Where-Object { $_.role -eq 'OWNER' } | Select-Object -ExpandProperty login) -join ',')"
 
+# --- FIX: Build a lookup hashtable for member roles ---
+$orgMembersByLogin = @{}
+foreach ($m in $memberArray) { $orgMembersByLogin[$m.login] = $m.role }
+
 # 5. Get all teams in org (REST)
 Write-Log "Step 5: Fetching teams in org ..."
 $teams = @()
@@ -513,8 +517,8 @@ foreach ($repo in $repos) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
                 $verifiedEmail = ""
-                $member = $memberArray | Where-Object { $_.login -eq $login }
-                $memberValue = if ($member) { $member.role } else { "OUTSIDE COLLABORATOR" }
+                # --- FIX: Set orgpermission based on lookup ---
+                $orgpermission = if ($orgMembersByLogin.ContainsKey($login)) { $orgMembersByLogin[$login] } else { "OUTSIDE COLLABORATOR" }
 
                 $collabsArray += [PSCustomObject]@{
                     orgRepo = $repo.name
@@ -524,7 +528,7 @@ foreach ($repo in $repos) {
                     verifiedEmail = $verifiedEmail
                     permission = $directPerm
                     org = $Org
-                    orgpermission = $memberValue
+                    orgpermission = $orgpermission
                     viaTeam = ""
                 }
             }
@@ -588,6 +592,8 @@ foreach ($repo in $repos) {
             if ($rowsByKey[$key].orgpermission -eq "OWNER") {
                 $rowsByKey[$key].permission = "admin"
             }
+            # --- FIX: Always set orgpermission to OWNER if they're an owner ---
+            $rowsByKey[$key].orgpermission = "OWNER"
         }
     }
 }
@@ -622,16 +628,8 @@ foreach ($row in $allRows) {
     if ($row.orgpermission -eq "OWNER" -or $row.orgpermission -eq "MEMBER") {
         continue
     }
-    $member = $memberArray | Where-Object { $_.login -eq $row.login }
-    $roles = @()
-    if ($member) {
-        $roles = @($member | Select-Object -ExpandProperty role)
-    }
-    Write-Log "DEBUG: login=$($row.login), roles=$($roles -join ',')"
-    if ($roles -contains "OWNER") {
-        $row.orgpermission = "OWNER"
-    } elseif ($roles -contains "MEMBER") {
-        $row.orgpermission = "MEMBER"
+    if ($orgMembersByLogin.ContainsKey($row.login)) {
+        $row.orgpermission = $orgMembersByLogin[$row.login]
     } else {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
@@ -654,3 +652,4 @@ if ($JSONPath) {
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
+
