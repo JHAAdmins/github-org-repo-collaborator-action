@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Export all GitHub organization repository collaborators, including SSO, verified org domain emails, as well as team-based permissions.
+    Export all GitHub organization repository collaborators, including SSO, verified org domain emails, and team-based permissions.
     Ensures that all org owners are shown with orgpermission="OWNER" and permission="admin" for every repo.
 
 .PARAMETER Token
