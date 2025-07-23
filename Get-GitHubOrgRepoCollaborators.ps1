@@ -615,8 +615,8 @@ foreach ($row in $allRows) {
         $rawRole = $orgMembersByLogin[$row.login].ToUpper()
 
         switch ($rawRole) {
-            "OWNER" {$row.orgpermission = "OWNER" }
-            "MEMBER" {row.orgpermission = "MEMBER" }
+            "OWNER" { $row.orgpermission = "OWNER" }
+            "MEMBER" { row.orgpermission = "MEMBER" }
             default {
                 Write-Host "Warning: Unexpected org role '$rawRole' for $($row.login)" -Foreground Yellow
                 $row.orgpermission = 'OUTSIDE COLLABORATOR"
@@ -625,7 +625,7 @@ foreach ($row in $allRows) {
     }
     else {
         #Not in OrgMembersByLogin -> OUTSIDE COLLABORATOR
-        $row.orgpermission = OUTSIDE COLLABORATOR
+        $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
     if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
         Write-HOST "DEBUG: Invalid orgpermission value $($row.login): $($row.orgpermission)" -Foreground Yellow
