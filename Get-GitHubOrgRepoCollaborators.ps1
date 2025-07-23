@@ -399,6 +399,7 @@ query MembersWithRole($Org: String!, $cursor: String) {
     $endCursor = $pi.endCursor
 } while ($pi.hasNextPage)
 Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
+Write-Log "DEBUG: All org owners: $(@($memberArray | Where-Object { $_.role -eq 'OWNER' } | Select-Object -ExpandProperty login) -join ',')"
 
 # 5. Get all teams in org (REST)
 Write-Log "Step 5: Fetching teams in org ..."
@@ -616,21 +617,21 @@ foreach ($row in $allRows) {
 }
 Write-Log "Step 11: Email merging complete."
 
-# 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR, and don't overwrite if already set to OWNER or MEMBER
+# 11b. Ensure orgpermission is only OWNER, MEMBER, or OUTSIDE COLLABORATOR, with array-safe comparison
 foreach ($row in $allRows) {
-    # Only update orgpermission if not already OWNER or MEMBER
     if ($row.orgpermission -eq "OWNER" -or $row.orgpermission -eq "MEMBER") {
         continue
     }
     $member = $memberArray | Where-Object { $_.login -eq $row.login }
+    $roles = @()
     if ($member) {
-        if ($member.role -eq "OWNER") {
-            $row.orgpermission = "OWNER"
-        } elseif ($member.role -eq "MEMBER") {
-            $row.orgpermission = "MEMBER"
-        } else {
-            $row.orgpermission = "OUTSIDE COLLABORATOR"
-        }
+        $roles = @($member | Select-Object -ExpandProperty role)
+    }
+    Write-Log "DEBUG: login=$($row.login), roles=$($roles -join ',')"
+    if ($roles -contains "OWNER") {
+        $row.orgpermission = "OWNER"
+    } elseif ($roles -contains "MEMBER") {
+        $row.orgpermission = "MEMBER"
     } else {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
