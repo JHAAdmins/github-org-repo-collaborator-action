@@ -560,7 +560,7 @@ foreach ($t in $teamUserRepoPerms) {
 
 $allRows = $rowsByKey.Values
 
-# Ensure all org owners are listed as admin for each repo and orgpermission = OWNER
+# PATCH: Ensure all org owners are listed as admin for each repo and orgpermission = OWNER (fix for incorrect permission/role mapping)
 foreach ($repo in $repos) {
     foreach ($owner in $memberArray | Where-Object { $_.role -eq "OWNER" }) {
         $key = "$($repo.name):$($owner.login)"
@@ -577,6 +577,7 @@ foreach ($repo in $repos) {
                 viaTeam = ""
             }
         } else {
+            # Always promote to admin for repo permission and OWNER for orgpermission
             $rowsByKey[$key].permission = "admin"
             $rowsByKey[$key].orgpermission = "OWNER"
         }
@@ -609,16 +610,20 @@ Write-Log "Step 11: Email merging complete."
 # 12. Final: Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR
 foreach ($row in $allRows) {
     if ($orgMembersByLogin.ContainsKey($row.login)) {
-        $row.orgpermission = $orgMembersByLogin[$row.login]
+        if ($orgMembersByLogin[$row.login] -eq "OWNER") {
+            $row.orgpermission = "OWNER"
+        } elseif ($orgMembersByLogin[$row.login] -eq "MEMBER") {
+            $row.orgpermission = "MEMBER"
+        }
     } else {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
-}
-# Debug: ensure orgpermission is always a valid org role
+    # PATCH: Ensure orgpermission is always a valid org role
     if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
         Write-Host "DEBUG: Invalid orgpermission value for $($row.login): $($row.orgpermission)" -ForegroundColor Yellow
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
+}
 # 13. Filter by permission if not ALL
 Write-Log "Step 12: Filtering by permission ($Permission) ..."
 if ($Permission -ne "ALL") {
