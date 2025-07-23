@@ -611,15 +611,14 @@ Write-Log "Step 11: Email merging complete."
 
 # 12. Final: Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR
 foreach ($row in $allRows) {
-    if ($orgMembersByLogin.ContainsKey($row.login)) {
-        $rawRole = $orgMembersByLogin[$row.login].ToUpper()
-
+    if ($orgMembersByLogin.ContainsKey($row.login.ToLower())) {
+        $rawRole = $orgMembersByLogin[$row.login.ToLower()].ToUpper()
         switch ($rawRole) {
             "OWNER" { $row.orgpermission = "OWNER" }
-            "MEMBER" { row.orgpermission = "MEMBER" }
+            "MEMBER" { $row.orgpermission = "MEMBER" }
             default {
-                Write-Host "Warning: Unexpected org role '$rawRole' for $($row.login)" -Foreground Yellow
-                $row.orgpermission = 'OUTSIDE COLLABORATOR"
+                Write-Host "Warning: Unexpected org role '$rawRole' for $($row.login)" -ForegroundColor Yellow
+                $row.orgpermission = "OUTSIDE COLLABORATOR"
             }
         }
     }
@@ -627,12 +626,6 @@ foreach ($row in $allRows) {
         #Not in OrgMembersByLogin -> OUTSIDE COLLABORATOR
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
-    if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
-        Write-HOST "DEBUG: Invalid orgpermission value $($row.login): $($row.orgpermission)" -Foreground Yellow
-        $row.orgpermission = "OUTSIDE COLLABORATOR"
-    }
-}
-    # PATCH: Ensure orgpermission is always a valid org role
     if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
         Write-Host "DEBUG: Invalid orgpermission value for $($row.login): $($row.orgpermission)" -ForegroundColor Yellow
         $row.orgpermission = "OUTSIDE COLLABORATOR"
@@ -655,4 +648,5 @@ if ($JSONPath) {
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
+
 
