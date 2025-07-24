@@ -400,9 +400,9 @@ query MembersWithRole($Org: String!, $cursor: String) {
 Write-Log "Step 4: Fetched $($memberArray.Count) org members with role."
 Write-Log "DEBUG: All org owners: $(@($memberArray | Where-Object { $_.role -eq 'OWNER' } | Select-Object -ExpandProperty login) -join ',')"
 
-# Build a lookup table for org member roles (case-insensitive)
+# Build a lookup table for org member roles
 $orgMembersByLogin = @{}
-foreach ($m in $memberArray) { $orgMembersByLogin[$m.login.ToLower()] = $m.role }
+foreach ($m in $memberArray) { $orgMembersByLogin[$m.login] = $m.role }
 
 # 5. Get all teams in org (REST)
 Write-Log "Step 5: Fetching teams in org ..."
@@ -514,7 +514,7 @@ foreach ($repo in $repos) {
                 $ssoEmailObj = $emailArray | Where-Object { $_.login -eq $login }
                 $ssoEmailValue = if ($ssoEmailObj) { $ssoEmailObj.ssoEmail } else { "" }
                 $verifiedEmail = ""
-                $orgpermission = if ($orgMembersByLogin.ContainsKey($login.ToLower())) { $orgMembersByLogin[$login.ToLower()] } else { "OUTSIDE COLLABORATOR" }
+                $orgpermission = if ($orgMembersByLogin.ContainsKey($login)) { $orgMembersByLogin[$login] } else { "OUTSIDE COLLABORATOR" }
                 $collabsArray += [PSCustomObject]@{
                     orgRepo = $repo.name
                     login = $login
@@ -560,7 +560,7 @@ foreach ($t in $teamUserRepoPerms) {
 
 $allRows = $rowsByKey.Values
 
-# PATCH: Ensure all org owners are listed as admin for each repo and orgpermission = OWNER (fix for incorrect permission/role mapping)
+# Ensure all org owners are listed as admin for each repo and orgpermission = OWNER
 foreach ($repo in $repos) {
     foreach ($owner in $memberArray | Where-Object { $_.role -eq "OWNER" }) {
         $key = "$($repo.name):$($owner.login)"
@@ -577,12 +577,9 @@ foreach ($repo in $repos) {
                 viaTeam = ""
             }
         } else {
-            # Always promote to admin for repo permission and OWNER for orgpermission
             $rowsByKey[$key].permission = "admin"
             $rowsByKey[$key].orgpermission = "OWNER"
         }
-        # Ensure lookup table has owner as OWNER (case-insensitive)
-        $orgMembersByLogin[$owner.login.ToLower()] = "OWNER"
     }
 }
 $allRows = $rowsByKey.Values
@@ -611,26 +608,13 @@ Write-Log "Step 11: Email merging complete."
 
 # 12. Final: Set orgpermission for every row from orgMembersByLogin (OWNER/MEMBER) else OUTSIDE COLLABORATOR
 foreach ($row in $allRows) {
-    if ($orgMembersByLogin.ContainsKey($row.login.ToLower())) {
-        $rawRole = $orgMembersByLogin[$row.login.ToLower()].ToUpper()
-        switch ($rawRole) {
-            "OWNER" { $row.orgpermission = "OWNER" }
-            "MEMBER" { $row.orgpermission = "MEMBER" }
-            default {
-                Write-Host "Warning: Unexpected org role '$rawRole' for $($row.login)" -ForegroundColor Yellow
-                $row.orgpermission = "OUTSIDE COLLABORATOR"
-            }
-        }
-    }
-    else {
-        #Not in OrgMembersByLogin -> OUTSIDE COLLABORATOR
-        $row.orgpermission = "OUTSIDE COLLABORATOR"
-    }
-    if ($row.orgpermission -notin @("OWNER", "MEMBER", "OUTSIDE COLLABORATOR")) {
-        Write-Host "DEBUG: Invalid orgpermission value for $($row.login): $($row.orgpermission)" -ForegroundColor Yellow
+    if ($orgMembersByLogin.ContainsKey($row.login)) {
+        $row.orgpermission = $orgMembersByLogin[$row.login]
+    } else {
         $row.orgpermission = "OUTSIDE COLLABORATOR"
     }
 }
+
 # 13. Filter by permission if not ALL
 Write-Log "Step 12: Filtering by permission ($Permission) ..."
 if ($Permission -ne "ALL") {
@@ -648,5 +632,3 @@ if ($JSONPath) {
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
-
-
