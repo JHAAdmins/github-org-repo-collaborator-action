@@ -7,7 +7,7 @@ on:
 
 jobs:
   audit-collaborators:
-    runs-on: windows-latest
+    runs-on: [self-hosted]
     timeout-minutes: 720
 
     steps:
@@ -16,19 +16,19 @@ jobs:
 
       - name: Download Get-GitHubOrgRepoCollaborators.ps1 from JHAAdmins/github-org-repo-collaborator-action
         run: |
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/JHAAdmins/github-org-repo-collaborator-action/main/Get-GitHubRepoCollaborators.ps1" -OutFile "Get-GitHubRepoCollaborators.ps1"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/JHAAdmins/github-org-repo-collaborator-action/main/Get-GitHubOrgRepoCollaborators.ps1" -OutFile "Get-GitHubOrgRepoCollaborators.ps1"
         shell: pwsh
 
       - name: Run Get-GitHubOrgRepoCollaborators.ps1 for jhtechnologyservices org access
         env:
           JHA_AUDIT: ${{ secrets.JHA_AUDIT }}
         run: |
-         ./Get-GitHubRepoCollaborators.ps1 `
+         ./Get-GitHubOrgRepoCollaborators.ps1 `
           -Token $env:JHA_AUDIT `
           -Org "jhaadmins" `
           -Permission "ALL"
         shell: pwsh
-  
+
       - name: Commit CSV and JSON report
         run: |
           git config --global user.email "jonball@jhacorp.com"
