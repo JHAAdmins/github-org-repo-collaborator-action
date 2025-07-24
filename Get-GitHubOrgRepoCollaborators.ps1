@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Export all GitHub organization repository collaborators, including SSO, verified org domain emails, as well as team-based permissions.
+    Export all GitHub organization repository collaborators, including SSO, verified org domain emails, as well as team-based permissions. Now includes repo visibility (private/internal/public).
 
 .PARAMETER Token
     GitHub Personal Access Token (or GitHub App installation token).
@@ -349,6 +349,12 @@ do {
 } while ($resp.Count -eq 100)
 Write-Log "Step 2: $($repos.Count) repositories found."
 
+# Build repo visibility lookup for easy access
+$repoVisibilityByName = @{}
+foreach ($repo in $repos) {
+    $repoVisibilityByName[$repo.name] = $repo.visibility
+}
+
 # 3. Get SSO/SAML emails (GraphQL)
 $emailArray = @()
 try {
@@ -437,6 +443,7 @@ foreach ($team in $teams) {
                     repo = $repoPerm.name
                     team = $teamSlug
                     permission = $repoPerm.permissions | Get-Member -MemberType NoteProperty | Where-Object { $repoPerm.permissions."$($_.Name)" } | ForEach-Object { $_.Name }
+                    repoVisibility = $repoPerm.visibility
                 }
             }
         }
@@ -469,6 +476,7 @@ foreach ($trp in $teamRepoPerms) {
     $repoName = $trp.repo
     $teamSlug = $trp.team
     $permissions = @($trp.permission)
+    $repoVisibility = $trp.repoVisibility
     $members = $teamMembers | Where-Object { $_.team -eq $teamSlug }
     foreach ($member in $members) {
         foreach ($perm in $permissions) {
@@ -482,6 +490,7 @@ foreach ($trp in $teamRepoPerms) {
                 org = $Org
                 orgpermission = ""
                 viaTeam = $teamSlug
+                repoVisibility = $repoVisibilityByName[$repoName]
             }
         }
     }
@@ -495,6 +504,7 @@ foreach ($repo in $repos) {
     Write-Log "Repo: $($repo.name)"
     $collabUri = "https://api.github.com/repos/$Org/$($repo.name)/collaborators?affiliation=$Affil&per_page=100"
     $collabs = Invoke-GitHubREST -Uri $collabUri
+    $repoVisibility = $repo.visibility
     if ($collabs) {
         foreach ($collab in $collabs) {
             $login = $collab.login
@@ -525,6 +535,7 @@ foreach ($repo in $repos) {
                     org = $Org
                     orgpermission = $orgpermission
                     viaTeam = ""
+                    repoVisibility = $repoVisibility
                 }
             }
         }
@@ -553,6 +564,10 @@ foreach ($t in $teamUserRepoPerms) {
         } elseif ($teamIdx -eq $curIdx -and -not [string]::IsNullOrWhiteSpace($t.viaTeam)) {
             $rowsByKey[$key].viaTeam += ",$($t.viaTeam)"
         }
+        # Make sure repoVisibility is kept
+        if (-not $rowsByKey[$key].repoVisibility) {
+            $rowsByKey[$key].repoVisibility = $t.repoVisibility
+        }
     } else {
         $rowsByKey[$key] = $t
     }
@@ -575,10 +590,12 @@ foreach ($repo in $repos) {
                 org = $Org
                 orgpermission = "OWNER"
                 viaTeam = ""
+                repoVisibility = $repo.visibility
             }
         } else {
             $rowsByKey[$key].permission = "admin"
             $rowsByKey[$key].orgpermission = "OWNER"
+            $rowsByKey[$key].repoVisibility = $repo.visibility
         }
     }
 }
@@ -624,11 +641,11 @@ Write-Log "Step 12: Filtering complete. Rows remaining: $($allRows.Count)"
 
 # 14. Sort and export
 Write-Log "Step 13: Exporting CSV to $CSVPath ..."
-$allRows | Sort-Object orgRepo | Select-Object orgRepo,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
+$allRows | Sort-Object orgRepo | Select-Object orgRepo,repoVisibility,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | Export-Csv -Path $CSVPath -NoTypeInformation -Encoding UTF8
 
 if ($JSONPath) {
     Write-Log "Step 13: Exporting JSON to $JSONPath ..."
-    $allRows | Sort-Object orgRepo | Select-Object orgRepo,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
+    $allRows | Sort-Object orgRepo | Select-Object orgRepo,repoVisibility,login,name,ssoEmail,verifiedEmail,permission,org,orgpermission,viaTeam | ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $JSONPath
 }
 
 Write-Log "========== Done. $($allRows.Count) rows exported. =========="
