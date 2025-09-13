@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Get repo collaborator report
-        uses: JHAAdmins/github-org-repo-collaborator-action@v2.2
+        uses: JHAAdmins/github-org-repo-collaborator-action@v2.3
         with:
           token: ${{ secrets.GITHUBREPOPERMS }}
           org: 'JHAiPayRailz'
